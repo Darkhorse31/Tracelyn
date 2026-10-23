@@ -1,3 +1,4 @@
+pub mod redis;
 pub mod webtraffic;
 
 use crate::config::{AuthType, ConfigError, ServerRecord};

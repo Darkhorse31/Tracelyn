@@ -1,0 +1,14 @@
+1) 1) (integer) 101
+   2) (integer) 1729680000
+   3) (integer) 15234
+   4) 1) "GET"
+      2) "session:abc123"
+   5) "10.0.0.5:44102"
+   6) ""
+2) 1) (integer) 100
+   2) (integer) 1729679900
+   3) (integer) 89012
+   4) 1) "HGETALL"
+      2) "user:profile:9912"
+   5) "10.0.0.8:55201"
+   6) ""

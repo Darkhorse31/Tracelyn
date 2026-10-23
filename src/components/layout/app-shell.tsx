@@ -9,6 +9,7 @@ const TITLES: Record<string, string> = {
   "/web": "Web traffic",
   "/apm": "API endpoints",
   "/settings": "Settings",
+  "/redis": "Redis",
 };
 
 export function AppShell() {

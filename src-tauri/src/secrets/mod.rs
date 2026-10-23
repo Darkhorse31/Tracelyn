@@ -14,6 +14,7 @@ pub enum SecretError {
 pub enum SecretKind {
     Password,
     KeyPassphrase,
+    RedisPassword,
 }
 
 impl SecretKind {
@@ -21,6 +22,7 @@ impl SecretKind {
         let suffix = match kind {
             SecretKind::Password => "password",
             SecretKind::KeyPassphrase => "key_passphrase",
+            SecretKind::RedisPassword => "redis_password",
         };
         format!("server:{}:{}", server_id, suffix)
     }
@@ -40,7 +42,11 @@ pub fn get_secret(server_id: &str, kind: SecretKind) -> Result<String, SecretErr
 }
 
 pub fn delete_secrets(server_id: &str) {
-    for kind in [SecretKind::Password, SecretKind::KeyPassphrase] {
+    for kind in [
+        SecretKind::Password,
+        SecretKind::KeyPassphrase,
+        SecretKind::RedisPassword,
+    ] {
         if let Ok(entry) = keyring::Entry::new(SERVICE, &SecretKind::account(server_id, kind)) {
             let _ = entry.delete_credential();
         }

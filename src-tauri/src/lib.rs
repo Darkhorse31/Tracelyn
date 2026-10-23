@@ -53,6 +53,9 @@ pub fn run() {
             commands::webtraffic::web_detect_server,
             commands::webtraffic::web_parse_config,
             commands::webtraffic::web_normalize_route,
+            commands::redis::set_redis_password,
+            commands::redis::redis_auth_status,
+            commands::redis::redis_snapshot_demo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
