@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { ServersProvider } from "@/contexts/servers-context";
 import { OverviewPage } from "@/pages/overview-page";
+import { AlertsPage } from "@/pages/alerts-page";
 import { ApmEndpointsPage } from "@/pages/apm-endpoints-page";
 import { RedisPage } from "@/pages/redis-page";
 import { ServerPage } from "@/pages/server-page";
@@ -19,6 +20,7 @@ function App() {
             <Route path="web" element={<WebTrafficPage />} />
             <Route path="apm" element={<ApmEndpointsPage />} />
             <Route path="redis" element={<RedisPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

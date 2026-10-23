@@ -4,15 +4,17 @@ import {
   subscribeOverviewMetrics,
   unsubscribeOverviewMetrics,
 } from "@/lib/api";
+import { useTimeRange } from "@/contexts/time-range-context";
 import type { OverviewServerMetrics } from "@/lib/types";
 
 export function useOverviewMetrics(enabled: boolean) {
+  const { isLive } = useTimeRange();
   const [byServerId, setByServerId] = useState<
     Map<string, OverviewServerMetrics>
   >(new Map());
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isLive) return;
 
     let unlisten: UnlistenFn | undefined;
 
@@ -36,7 +38,7 @@ export function useOverviewMetrics(enabled: boolean) {
       void unlisten?.();
       void unsubscribeOverviewMetrics();
     };
-  }, [enabled]);
+  }, [enabled, isLive]);
 
   return byServerId;
 }

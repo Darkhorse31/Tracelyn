@@ -1,91 +1,85 @@
-import { useMemo, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useEffect, useMemo, useState } from "react";
+import {
+  subscribeApmMetrics,
+  unsubscribeApmMetrics,
+} from "@/lib/api";
+import { useTimeRange } from "@/contexts/time-range-context";
 import type { ApmData, EndpointRow, RouteRule } from "@/lib/apm-types";
 
-const ENDPOINTS: EndpointRow[] = [
-  {
-    route: "/api/orders/:id/items",
-    throughput: 18.2,
-    avgMs: 84,
-    p50Ms: 62,
-    p95Ms: 210,
-    p99Ms: 420,
-    errorRate: 0.02,
-    statusBreakdown: { "200": 1800, "500": 36 },
-  },
-  {
-    route: "/api/users/:id",
-    throughput: 12.4,
-    avgMs: 45,
-    p50Ms: 38,
-    p95Ms: 95,
-    p99Ms: 180,
-    errorRate: 0.004,
-    statusBreakdown: { "200": 2400, "404": 12 },
-  },
-  {
-    route: "/checkout",
-    throughput: 4.1,
-    avgMs: 320,
-    p50Ms: 280,
-    p95Ms: 890,
-    p99Ms: 1200,
-    errorRate: 0.08,
-    statusBreakdown: { "200": 380, "500": 32, "302": 44 },
-  },
-];
-
-function heatmapFromEndpoints(rows: EndpointRow[]) {
-  const cells = [];
-  for (const row of rows) {
-    for (let b = 0; b < 24; b++) {
-      cells.push({
-        route: row.route,
-        bucketIndex: b,
-        p50Ms: row.p50Ms * (0.85 + (b % 5) * 0.05),
-        p95Ms: row.p95Ms * (0.9 + (b % 4) * 0.06),
-      });
-    }
-  }
-  return cells;
+interface ApmMetricsEvent {
+  serverId: string;
+  endpoints: EndpointRow[];
+  heatmap: {
+    route: string;
+    bucketIndex: number;
+    p50Ms: number;
+    p95Ms: number;
+  }[];
+  timingNotice?: { message: string; suggestedLine: string };
 }
 
-/** Data hook — swap when Rust aggregator events are subscribed. */
-export function useApmEndpoints(_serverId: string | null): ApmData & {
+export function useApmEndpoints(serverId: string | null): ApmData & {
   addRouteRule: (rule: RouteRule) => void;
 } {
+  const { isLive } = useTimeRange();
+  const [endpoints, setEndpoints] = useState<EndpointRow[]>([]);
+  const [heatmap, setHeatmap] = useState<ApmMetricsEvent["heatmap"]>([]);
+  const [timingNotice, setTimingNotice] = useState<ApmData["timingNotice"]>();
+  const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState<RouteRule[]>([
     { pattern: "^/api/v\\d+", replacement: "/api/v:ver" },
   ]);
 
-  const endpoints = useMemo(() => ENDPOINTS, []);
+  useEffect(() => {
+    if (!serverId || !isLive) {
+      setEndpoints([]);
+      setHeatmap([]);
+      setLoading(!serverId);
+      return;
+    }
+
+    let unlisten: UnlistenFn | undefined;
+    setLoading(true);
+
+    void (async () => {
+      await subscribeApmMetrics(serverId);
+      unlisten = await listen<ApmMetricsEvent>(
+        `apm-metrics:${serverId}`,
+        (event) => {
+          const payload = event.payload;
+          setEndpoints(payload.endpoints);
+          setHeatmap(payload.heatmap);
+          setTimingNotice(payload.timingNotice);
+          setLoading(false);
+        },
+      );
+    })();
+
+    return () => {
+      void unlisten?.();
+      void unsubscribeApmMetrics(serverId);
+    };
+  }, [serverId, isLive]);
+
   const slowest = useMemo(
-    () => [...endpoints].sort((a, b) => b.p95Ms - a.p95Ms).slice(0, 5),
+    () => [...endpoints].sort((a, b) => b.p95Ms - a.p95Ms).slice(0, 8),
     [endpoints],
   );
   const mostFailing = useMemo(
-    () => [...endpoints].sort((a, b) => b.errorRate - a.errorRate).slice(0, 5),
+    () => [...endpoints].sort((a, b) => b.errorRate - a.errorRate).slice(0, 8),
     [endpoints],
   );
 
-  const now = Date.now();
-  const latencySeries = endpoints.map((ep) => ({
-    route: ep.route,
-    points: Array.from({ length: 40 }, (_, i) => ({
-      t: now - (39 - i) * 15000,
-      p50: ep.p50Ms * (0.9 + Math.sin(i / 6) * 0.1),
-      p95: ep.p95Ms * (0.9 + Math.sin(i / 5) * 0.12),
-      p99: ep.p99Ms * (0.9 + Math.sin(i / 4) * 0.15),
-    })),
-  }));
-
   return {
     endpoints,
-    heatmap: heatmapFromEndpoints(endpoints),
+    heatmap,
     slowest,
     mostFailing,
     routeRules: rules,
-    latencySeries,
-    loading: false,
-    addRouteRule: (rule) => setRules((r) => [...r, rule]),
+    latencySeries: [],
+    timingNotice,
+    loading,
+    addRouteRule: (rule) => setRules((prev) => [...prev, rule]),
   };
 }

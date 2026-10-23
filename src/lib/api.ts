@@ -52,3 +52,27 @@ export async function subscribeServerMetrics(serverId: string): Promise<void> {
 export async function unsubscribeServerMetrics(serverId: string): Promise<void> {
   return invoke("unsubscribe_server_metrics", { serverId });
 }
+
+export async function subscribeWebTraffic(serverId: string): Promise<void> {
+  return invoke("subscribe_web_traffic", { serverId });
+}
+
+export async function unsubscribeWebTraffic(serverId: string): Promise<void> {
+  return invoke("unsubscribe_web_traffic", { serverId });
+}
+
+export async function subscribeApmMetrics(serverId: string): Promise<void> {
+  return invoke("subscribe_apm_metrics", { serverId });
+}
+
+export async function unsubscribeApmMetrics(serverId: string): Promise<void> {
+  return invoke("unsubscribe_apm_metrics", { serverId });
+}
+
+export async function subscribeRedisMetrics(serverId: string): Promise<void> {
+  return invoke("subscribe_redis_metrics", { serverId });
+}
+
+export async function unsubscribeRedisMetrics(serverId: string): Promise<void> {
+  return invoke("unsubscribe_redis_metrics", { serverId });
+}

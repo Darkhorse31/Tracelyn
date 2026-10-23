@@ -1,36 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
+import {
+  subscribeRedisMetrics,
+  unsubscribeRedisMetrics,
+} from "@/lib/api";
+import { queryMetricSeries } from "@/lib/metrics-api";
+import { useTimeRange } from "@/contexts/time-range-context";
 import type {
   RedisDashboardData,
   RedisSnapshot,
   RedisTimeSeriesPoint,
 } from "@/lib/redis-types";
 import { useServersContext } from "@/contexts/servers-context";
-
-const MOCK_SERIES_LEN = 60;
-
-function buildMockSeries(snapshot: RedisSnapshot): RedisTimeSeriesPoint[] {
-  const now = Date.now();
-  const baseOps = snapshot.derived.opsPerSec;
-  const baseMem = snapshot.derived.memoryUsedBytes;
-  const baseHit = snapshot.derived.hitRatePercent;
-  const points: RedisTimeSeriesPoint[] = [];
-  for (let i = MOCK_SERIES_LEN - 1; i >= 0; i--) {
-    const phase = (MOCK_SERIES_LEN - i) / MOCK_SERIES_LEN;
-    const wobble = Math.sin(phase * Math.PI * 4) * 0.08;
-    points.push({
-      t: now - i * 5000,
-      opsPerSec: Math.max(0, baseOps * (1 + wobble)),
-      memoryUsedBytes: Math.round(baseMem * (1 + wobble * 0.02)),
-      hitRatePercent: Math.min(100, Math.max(0, baseHit + wobble * 5)),
-    });
-  }
-  return points;
-}
-
-async function fetchDemoSnapshot(): Promise<RedisSnapshot> {
-  return invoke<RedisSnapshot>("redis_snapshot_demo");
-}
 
 async function fetchAuthConfigured(serverId: string): Promise<boolean> {
   const status = await invoke<{ configured: boolean }>("redis_auth_status", {
@@ -42,47 +24,109 @@ async function fetchAuthConfigured(serverId: string): Promise<boolean> {
 export interface UseRedisDashboardResult extends RedisDashboardData {
   refresh: () => void;
   setRedisPassword: (password: string) => Promise<void>;
+  redisDetected: boolean;
 }
 
-/**
- * Data hook for the Redis view. Uses typed mock series + demo snapshot from Rust parsers
- * until ConnectionManager wires live polling.
- */
 export function useRedisDashboard(): UseRedisDashboardResult {
   const { selectedServerId } = useServersContext();
+  const { range, isLive } = useTimeRange();
   const [snapshot, setSnapshot] = useState<RedisSnapshot | null>(null);
+  const [series, setSeries] = useState<RedisTimeSeriesPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [authConfigured, setAuthConfigured] = useState(false);
+  const [redisDetected, setRedisDetected] = useState(false);
 
-  const load = useCallback(async () => {
+  const loadHistorical = useCallback(async () => {
+    if (!selectedServerId) return;
     setLoading(true);
     setError(null);
     try {
-      const snap = await fetchDemoSnapshot();
-      setSnapshot(snap);
-      if (selectedServerId) {
-        setAuthConfigured(await fetchAuthConfigured(selectedServerId));
-      } else {
-        setAuthConfigured(false);
-      }
+      const [ops, mem, hit] = await Promise.all([
+        queryMetricSeries({
+          serverId: selectedServerId,
+          metricKey: "redis.ops_per_sec",
+          rangeStartMs: range.startMs,
+          rangeEndMs: range.endMs,
+          preferLive: false,
+        }),
+        queryMetricSeries({
+          serverId: selectedServerId,
+          metricKey: "redis.memory_used_bytes",
+          rangeStartMs: range.startMs,
+          rangeEndMs: range.endMs,
+          preferLive: false,
+        }),
+        queryMetricSeries({
+          serverId: selectedServerId,
+          metricKey: "redis.hit_rate_percent",
+          rangeStartMs: range.startMs,
+          rangeEndMs: range.endMs,
+          preferLive: false,
+        }),
+      ]);
+      const points: RedisTimeSeriesPoint[] = ops.points.map((p, i) => ({
+        t: p.tsMs,
+        opsPerSec: p.value,
+        memoryUsedBytes: mem.points[i]?.value ?? 0,
+        hitRatePercent: hit.points[i]?.value ?? 0,
+      }));
+      setSeries(points);
+      setAuthConfigured(await fetchAuthConfigured(selectedServerId));
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  }, [selectedServerId]);
+  }, [selectedServerId, range.startMs, range.endMs]);
 
   useEffect(() => {
-    void load();
-    const id = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(id);
-  }, [load]);
+    if (!selectedServerId) {
+      setSnapshot(null);
+      setSeries([]);
+      setLoading(false);
+      return;
+    }
 
-  const series = useMemo(
-    () => (snapshot ? buildMockSeries(snapshot) : []),
-    [snapshot],
-  );
+    if (!isLive) {
+      void loadHistorical();
+      return;
+    }
+
+    let unlisten: UnlistenFn | undefined;
+    setLoading(true);
+    setError(null);
+    setSeries([]);
+
+    void (async () => {
+      await subscribeRedisMetrics(selectedServerId);
+      setAuthConfigured(await fetchAuthConfigured(selectedServerId));
+      unlisten = await listen<RedisSnapshot>(
+        `redis-metrics:${selectedServerId}`,
+        (event) => {
+          const snap = event.payload;
+          setSnapshot(snap);
+          setRedisDetected(true);
+          setLoading(false);
+          setSeries((prev) => {
+            const point: RedisTimeSeriesPoint = {
+              t: snap.collectedAtMs,
+              opsPerSec: snap.derived.opsPerSec,
+              memoryUsedBytes: snap.derived.memoryUsedBytes,
+              hitRatePercent: snap.derived.hitRatePercent,
+            };
+            const next = [...prev, point];
+            return next.length > 60 ? next.slice(-60) : next;
+          });
+        },
+      );
+    })();
+
+    return () => {
+      void unlisten?.();
+      void unsubscribeRedisMetrics(selectedServerId);
+    };
+  }, [selectedServerId, isLive, loadHistorical]);
 
   const setRedisPassword = useCallback(
     async (password: string) => {
@@ -104,7 +148,8 @@ export function useRedisDashboard(): UseRedisDashboardResult {
     loading,
     error,
     authConfigured,
-    refresh: () => void load(),
+    redisDetected,
+    refresh: () => void loadHistorical(),
     setRedisPassword,
   };
 }

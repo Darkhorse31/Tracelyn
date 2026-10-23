@@ -1,6 +1,13 @@
+use crate::collectors::redis::RedisCollector;
 use crate::collectors::system::SystemCollectorState;
 use crate::config::ServerRecord;
+use crate::connection::ssh_runner::SessionRunner;
+use crate::connection::web_pipeline::{redis_detected, WebPipeline};
 use crate::events::EventHub;
+use crate::metrics_ingest::{
+    evaluate_live_alerts, persist_samples, samples_from_overview, samples_from_redis,
+    samples_from_web,
+};
 use crate::ssh::{connect_persistent, run_command};
 use crate::ssh::SshSession;
 use crate::state::{AppState, ConnectionStatus, ServerRuntime};
@@ -112,7 +119,7 @@ async fn run_server_loop(
                 }
                 emit_statuses(&app);
 
-                if let Err(err) = collector_loop(&session, &server_id, &event_hub).await {
+                if let Err(err) = collector_loop(&app, &session, &server_id, &event_hub).await {
                     let state = app.state::<AppState>();
                     let prev = state.runtime(&server_id);
                     state.set_runtime(
@@ -154,6 +161,10 @@ async fn run_server_loop(
                     },
                 );
                 emit_statuses(&app);
+
+                let mut metrics = HashMap::new();
+                metrics.insert("server.connected".into(), 0.0);
+                evaluate_live_alerts(&app, &server_id, false, metrics);
             }
         }
 
@@ -188,24 +199,52 @@ async fn run_server_loop(
 }
 
 async fn collector_loop(
+    app: &AppHandle,
     session: &SshSession,
     server_id: &str,
     event_hub: &Arc<EventHub>,
 ) -> Result<(), String> {
     let mut state = SystemCollectorState::new();
+    let mut web = WebPipeline::setup(session).await;
+    let redis_available = redis_detected(session).await;
+    let mut redis_collector = if redis_available {
+        Some(RedisCollector::new(SessionRunner::new(session), server_id))
+    } else {
+        None
+    };
+
     let mut fast = tokio::time::interval(Duration::from_secs(2));
     let mut slow = tokio::time::interval(Duration::from_secs(5));
     let mut services_iv = tokio::time::interval(Duration::from_secs(15));
+    let mut web_iv = tokio::time::interval(Duration::from_secs(1));
+    let mut redis_iv = tokio::time::interval(Duration::from_secs(10));
     fast.tick().await;
     slow.tick().await;
     services_iv.tick().await;
+    web_iv.tick().await;
+    redis_iv.tick().await;
 
     loop {
+        web.drain_log_lines();
+
         tokio::select! {
             _ = fast.tick() => {
                 let err = state.poll_fast(session).await.err();
-                event_hub.push_overview(state.overview(server_id));
+                let overview = state.overview(server_id);
+                event_hub.push_overview(overview.clone());
                 event_hub.push_server_detail(state.snapshot(server_id, err));
+
+                let state_app = app.state::<AppState>();
+                persist_samples(&state_app, samples_from_overview(&overview));
+
+                let mut alert_metrics = HashMap::new();
+                alert_metrics.insert("cpu.percent".into(), overview.cpu_percent);
+                alert_metrics.insert("memory.percent".into(), overview.memory_percent);
+                alert_metrics.insert("disk.percent".into(), overview.disk_percent);
+                alert_metrics.insert("server.connected".into(), 1.0);
+                alert_metrics.insert("http.5xx_rate_percent".into(), web.http_5xx_rate_percent());
+                alert_metrics.insert("endpoint.p95_ms".into(), web.max_endpoint_p95_ms());
+                evaluate_live_alerts(app, server_id, true, alert_metrics);
             }
             _ = slow.tick() => {
                 let _ = state.poll_processes(session).await;
@@ -215,6 +254,38 @@ async fn collector_loop(
             _ = services_iv.tick() => {
                 let _ = state.poll_services(session).await;
                 event_hub.push_server_detail(state.snapshot(server_id, None));
+            }
+            _ = web_iv.tick() => {
+                let (web_event, apm_event) = web.build_events(server_id);
+                let req_per_sec = web_event.metrics.req_per_sec;
+                event_hub.push_web_traffic(web_event);
+                event_hub.push_apm(apm_event);
+                let state_app = app.state::<AppState>();
+                persist_samples(
+                    &state_app,
+                    samples_from_web(
+                        server_id,
+                        req_per_sec,
+                        web.http_5xx_rate_percent(),
+                        web.max_endpoint_p95_ms(),
+                    ),
+                );
+            }
+            _ = redis_iv.tick(), if redis_collector.is_some() => {
+                if let Some(collector) = redis_collector.as_mut() {
+                    if let Ok(snap) = collector.poll().await {
+                        if let Ok(json) = serde_json::to_value(&snap) {
+                            event_hub.push_redis(server_id, json);
+                        }
+                        let state_app = app.state::<AppState>();
+                        persist_samples(&state_app, samples_from_redis(server_id, &snap));
+                        let mut alert_metrics = HashMap::new();
+                        if let Some(ratio) = snap.derived.memory_used_ratio {
+                            alert_metrics.insert("redis.memory_used_ratio".into(), ratio);
+                        }
+                        evaluate_live_alerts(app, server_id, true, alert_metrics);
+                    }
+                }
             }
         }
     }

@@ -12,7 +12,8 @@ import { filterWebLogs, useWebTraffic } from "@/hooks/use-web-traffic";
 
 export function WebTrafficPage() {
   const { selectedServerId } = useServersContext();
-  const { metrics, logs, loading } = useWebTraffic(selectedServerId);
+  const { metrics, logs, loading, permissionDenied, webDetected } =
+    useWebTraffic(selectedServerId);
   const [pathQuery, setPathQuery] = useState("");
   const [ipQuery, setIpQuery] = useState("");
   const [textQuery, setTextQuery] = useState("");
@@ -40,14 +41,34 @@ export function WebTrafficPage() {
   if (!selectedServerId) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card/40 px-6 py-12 text-center text-sm text-muted-foreground">
-        Select a server in the sidebar to preview web traffic (mock data until log
-        streaming is connected).
+        Select a server in the sidebar and connect to view live web traffic.
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {permissionDenied && (
+        <div
+          className="flex gap-3 rounded-lg border border-status-critical/40 bg-status-critical/10 px-4 py-3 text-sm"
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-status-critical" />
+          <p>
+            Cannot read the access log on the server (permission denied). Ensure
+            the SSH user can read the web server log files, or use a group such
+            as <span className="font-mono text-xs">adm</span> on Debian/Ubuntu.
+          </p>
+        </div>
+      )}
+
+      {!webDetected && !permissionDenied && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          No nginx or Apache process detected on this host. Web traffic metrics
+          will stay empty until a supported web server is running.
+        </div>
+      )}
+
       {metrics.timingNotice && (
         <div
           className="flex gap-3 rounded-lg border border-status-warning/40 bg-status-warning/10 px-4 py-3 text-sm"

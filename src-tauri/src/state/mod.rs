@@ -2,6 +2,7 @@ use crate::config::ConfigStore;
 use crate::connection::ConnectionManager;
 use crate::events::EventHub;
 use crate::ssh::HostKeyStore;
+use crate::storage::{default_db_path, MetricStore};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -33,6 +34,7 @@ pub struct AppState {
     pub host_keys: Arc<AsyncMutex<HostKeyStore>>,
     pub event_hub: Arc<EventHub>,
     pub connections: ConnectionManager,
+    pub metrics: Mutex<MetricStore>,
     connection_status: Mutex<HashMap<String, ServerRuntime>>,
 }
 
@@ -62,11 +64,13 @@ impl AppState {
         event_hub: Arc<EventHub>,
         connections: ConnectionManager,
     ) -> Self {
+        let metrics = MetricStore::open(default_db_path()).expect("failed to open metrics store");
         Self {
             config: Mutex::new(config),
             host_keys,
             event_hub,
             connections,
+            metrics: Mutex::new(metrics),
             connection_status: Mutex::new(HashMap::new()),
         }
     }

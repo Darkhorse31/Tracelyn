@@ -1,4 +1,5 @@
 pub mod redis;
+pub mod storage_alerts;
 pub mod webtraffic;
 
 use crate::config::{AuthType, ConfigError, ServerRecord};
@@ -201,6 +202,36 @@ pub fn subscribe_server_metrics(state: State<AppState>, server_id: String) {
 #[tauri::command]
 pub fn unsubscribe_server_metrics(state: State<AppState>, server_id: String) {
     state.event_hub.unsubscribe_server_detail(&server_id);
+}
+
+#[tauri::command]
+pub fn subscribe_web_traffic(state: State<AppState>, server_id: String) {
+    state.event_hub.subscribe_web_traffic(&server_id);
+}
+
+#[tauri::command]
+pub fn unsubscribe_web_traffic(state: State<AppState>, server_id: String) {
+    state.event_hub.unsubscribe_web_traffic(&server_id);
+}
+
+#[tauri::command]
+pub fn subscribe_apm_metrics(state: State<AppState>, server_id: String) {
+    state.event_hub.subscribe_apm(&server_id);
+}
+
+#[tauri::command]
+pub fn unsubscribe_apm_metrics(state: State<AppState>, server_id: String) {
+    state.event_hub.unsubscribe_apm(&server_id);
+}
+
+#[tauri::command]
+pub fn subscribe_redis_metrics(state: State<AppState>, server_id: String) {
+    state.event_hub.subscribe_redis(&server_id);
+}
+
+#[tauri::command]
+pub fn unsubscribe_redis_metrics(state: State<AppState>, server_id: String) {
+    state.event_hub.unsubscribe_redis(&server_id);
 }
 
 fn resolve_server_input(

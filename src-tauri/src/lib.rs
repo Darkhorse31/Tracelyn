@@ -1,12 +1,15 @@
+mod alerts;
 mod collectors;
 mod commands;
 mod config;
 mod connection;
 mod events;
 mod metrics;
+mod metrics_ingest;
 mod secrets;
 mod ssh;
 mod state;
+mod storage;
 mod webserver;
 
 use config::ConfigStore;
@@ -29,12 +32,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .setup(|app| {
             let handle = app.handle().clone();
             let hub = app.state::<AppState>().event_hub.clone();
-            hub.set_app(handle);
+            hub.set_app(handle.clone());
             hub.clone().spawn_flusher();
+            metrics_ingest::spawn_storage_maintenance(handle.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,13 +54,28 @@ pub fn run() {
             commands::unsubscribe_overview_metrics,
             commands::subscribe_server_metrics,
             commands::unsubscribe_server_metrics,
+            commands::subscribe_web_traffic,
+            commands::unsubscribe_web_traffic,
+            commands::subscribe_apm_metrics,
+            commands::unsubscribe_apm_metrics,
+            commands::subscribe_redis_metrics,
+            commands::unsubscribe_redis_metrics,
             commands::webtraffic::web_parse_log_line,
             commands::webtraffic::web_detect_server,
             commands::webtraffic::web_parse_config,
             commands::webtraffic::web_normalize_route,
             commands::redis::set_redis_password,
             commands::redis::redis_auth_status,
-            commands::redis::redis_snapshot_demo,
+            commands::storage_alerts::get_retention_config,
+            commands::storage_alerts::set_retention_config,
+            commands::storage_alerts::insert_metric_samples,
+            commands::storage_alerts::query_metric_series,
+            commands::storage_alerts::run_storage_jobs,
+            commands::storage_alerts::list_alert_rules,
+            commands::storage_alerts::upsert_alert_rule,
+            commands::storage_alerts::delete_alert_rule,
+            commands::storage_alerts::list_alert_history,
+            commands::storage_alerts::evaluate_alerts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

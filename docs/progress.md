@@ -69,3 +69,37 @@ Product renamed from **ServerLens** to **Tracelyn** across Tauri config (`com.tr
 
 - Rust: `connection/`, `collectors/system/`, `events/`, `metrics/`.
 - Frontend: `src/pages/server-page.tsx`, `src/components/charts/`, `src/hooks/use-overview-metrics.ts`, `src/hooks/use-server-metrics.ts`.
+
+## Steps 3–7 — Parallel branches merged and wired (2026-10-23)
+
+Merged `feat/weblogs-apm`, `feat/redis`, and `feat/storage-alerts` into `master` (no-ff), removed agent scratch files, extended `.gitignore`, and connected collectors to **`ConnectionManager`**.
+
+### Built (integration)
+
+- **Web / APM:** `WebPipeline` detects nginx/Apache over SSH, parses config, streams access logs via `tail -F` on a dedicated channel, feeds `TrafficAggregator`, emits `web-traffic:{id}` and `apm-metrics:{id}` (batched with existing hub). UI shows permission-denied and missing-timing notices.
+- **Redis:** when `redis-server` is present, `RedisCollector` polls via `redis-cli` on the SSH session; events `redis-metrics:{id}`; Redis password in keyring.
+- **Storage:** live samples persisted for system, web, endpoint, and Redis metrics; SQLite rollups/prune on a background timer; `query_metric_series` for historical ranges.
+- **Alerts:** default rules seeded; engine runs on live metric maps with Windows notifications on fire; Alerts page uses Rust API (`useAlerts` → Tauri).
+- **Time range:** shared `TimeRangeProvider` + `TimeRangePicker` in top bar; live views subscribe to events; historical ranges query SQLite (Server CPU, web req/s, Redis series).
+
+### Verified
+
+| Check | Result |
+|--------|--------|
+| `cargo test` in `src-tauri` | **Pass** (34 tests) |
+| `cargo check` in `src-tauri` | **Pass** (warnings: unused re-exports / demo command) |
+| `npm run build` | **Pass** |
+
+### Not yet verified
+
+- End-to-end against a real Linux VPS with nginx/Apache logs, Redis, and alert firing (not run in this session).
+- Custom time-range dialog (preset + disabled custom button only sets custom preset).
+- Overview historical cards when not in Live mode (live subscription only).
+- APM route-rules editor pushing rules into the live `RouteNormalizer` on the server.
+- Packaged `npm run tauri build` release binary.
+
+### Branch notes (archived)
+
+- **Web traffic & APM core:** `webserver/` parsers, aggregation, virtualized log UI, APM heatmap/tables (see git history on `feat/weblogs-apm`).
+- **Redis core:** `collectors/redis/`, fixtures, Redis page UI (see `feat/redis`).
+- **Storage & alerts core:** `storage/`, `alerts/`, SQLite schema, notification plugin (see `feat/storage-alerts`).

@@ -157,6 +157,52 @@ async fn connect(
     Ok(session)
 }
 
+/// Stream access-log lines from `tail -F` on a dedicated SSH channel.
+pub async fn start_tail_follow(
+    session: &SshSession,
+    log_path: &str,
+) -> Result<tokio::sync::mpsc::UnboundedReceiver<Result<String, String>>, SshError> {
+    let mut channel = session.channel_open_session().await?;
+    let escaped = log_path.replace('\'', "'\\''");
+    let cmd = format!("tail -n 0 -F -- '{}' 2>&1", escaped);
+    channel.exec(false, cmd).await?;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    tauri::async_runtime::spawn(async move {
+        let mut buf = String::new();
+        while let Some(msg) = channel.wait().await {
+            match msg {
+                ChannelMsg::Data { data } => {
+                    buf.push_str(&String::from_utf8_lossy(&data));
+                    while let Some(pos) = buf.find('\n') {
+                        let line = buf[..pos].trim_end_matches('\r').to_string();
+                        buf = buf[pos + 1..].to_string();
+                        if line.is_empty() {
+                            continue;
+                        }
+                        if line.contains("Permission denied")
+                            || line.contains("cannot open")
+                            || line.contains("No such file")
+                        {
+                            let _ = tx.send(Err(line));
+                            continue;
+                        }
+                        let _ = tx.send(Ok(line));
+                    }
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    if exit_status != 0 {
+                        let _ = tx.send(Err(format!("tail exited with status {}", exit_status)));
+                    }
+                    break;
+                }
+                ChannelMsg::Eof => break,
+                _ => {}
+            }
+        }
+    });
+    Ok(rx)
+}
+
 pub async fn run_command(session: &SshSession, command: &str) -> Result<String, SshError> {
     let mut channel = session.channel_open_session().await?;
     channel.exec(true, command).await?;
