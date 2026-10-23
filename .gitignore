@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+src-tauri/target/
+
+# Logs
+*.log
+npm-debug.log*
+.step1-log.txt
+.step1-prompt.txt
+.buildtools-log.txt
+.install-buildtools.ps1
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env / secrets
+.env
+.env.*
+
+# Tauri
+src-tauri/gen/
