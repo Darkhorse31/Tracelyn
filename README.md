@@ -1,7 +1,33 @@
-# Tauri + React + Typescript
+# Tracelyn
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Windows desktop app for monitoring Linux VPS servers over SSH — system health, web traffic, API endpoint performance, Redis, and more. No agent required on the servers.
 
-## Recommended IDE Setup
+## Stack
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **Tauri 2** + **React** + **TypeScript** (Vite)
+- **Rust** core (SSH via russh, local config and secrets)
+
+## Development
+
+```bash
+npm install
+npm run tauri dev
+```
+
+Build the frontend:
+
+```bash
+npm run build
+```
+
+Check the Rust crate:
+
+```bash
+cd src-tauri && cargo check
+```
+
+## Docs
+
+- Design spec: `docs/specs/2026-10-23-serverlens-design.md`
+- Phase 1 plan: `docs/plans/2026-10-23-phase1-plan.md`
+- Progress: `docs/progress.md`

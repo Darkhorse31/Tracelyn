@@ -10,7 +10,7 @@ const TITLES: Record<string, string> = {
 
 export function AppShell() {
   const location = useLocation();
-  const title = TITLES[location.pathname] ?? "ServerLens";
+  const title = TITLES[location.pathname] ?? "Tracelyn";
 
   return (
     <SidebarProvider defaultOpen>

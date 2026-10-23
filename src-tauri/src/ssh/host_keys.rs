@@ -90,5 +90,5 @@ fn fingerprint(key: &PublicKey) -> String {
 
 fn known_hosts_path() -> PathBuf {
     let base = dirs::data_local_dir().expect("local data dir");
-    base.join("ServerLens").join("known_hosts.json")
+    base.join("Tracelyn").join("known_hosts.json")
 }

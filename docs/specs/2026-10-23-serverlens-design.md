@@ -1,4 +1,4 @@
-# ServerLens — Design Spec
+# Tracelyn — Design Spec
 
 Date: 2026-10-23
 Status: Approved 2026-10-23
@@ -105,7 +105,7 @@ SQLite in the app data folder. Raw samples kept 7 days, 1-minute rollups 90 days
 ## 12. Phase 2 — Distributed traces (Datadog-style APM)
 
 - User adds OpenTelemetry SDK / auto-instrumentation to their apps (PHP, Node.js, Python, etc.), configured with a file exporter writing OTLP JSON to a rotating file on the server.
-- No extra service on the server; ServerLens tails the trace file over SSH.
+- No extra service on the server; Tracelyn tails the trace file over SSH.
 - Views: trace list (filter by service, endpoint, duration, error), flame graph per trace, time split (DB / Redis / external HTTP / own code), slow queries, errors with stack traces, service map.
 - Setup guide per language shown in-app.
 

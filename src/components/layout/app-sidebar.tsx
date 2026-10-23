@@ -54,7 +54,7 @@ export function AppSidebar() {
               <Activity />
             </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-              <span className="text-sm font-semibold tracking-tight">ServerLens</span>
+              <span className="text-sm font-semibold tracking-tight">Tracelyn</span>
               <span className="text-xs text-muted-foreground">SSH monitoring</span>
             </div>
           </div>

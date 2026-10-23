@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-const SERVICE: &str = "ServerLens";
+const SERVICE: &str = "Tracelyn";
 
 #[derive(Debug, Error)]
 pub enum SecretError {

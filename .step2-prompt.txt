@@ -1,0 +1,8 @@
+﻿Read docs/specs/2026-10-23-serverlens-design.md (source of truth; the product is now named Tracelyn; the UI must look professional per section 7a) and docs/plans/2026-10-23-phase1-plan.md, and docs/progress.md for what exists.
+Implement ONLY "Step 2 - System collector, Overview and Server views" from the plan:
+- ConnectionManager in Rust: one persistent russh session per connected server, keepalive, exponential backoff reconnect (1s to 60s cap), status ok/degraded(amber)/offline(red after 1 min).
+- System collector using read-only commands at spec intervals: /proc/stat, /proc/meminfo, /proc/loadavg, /proc/net/dev, /proc/diskstats, df -P (2s); ps top by CPU and memory (5s); ss -s (5s); systemctl is-active for detected services (15s). Compute CPU %, memory %, rates for network and disk I/O in Rust. Unit tests with fixture files for every parser.
+- Stream pre-aggregated samples to the UI via Tauri events, batched to at most 4 updates per second per view; views not on screen unsubscribe.
+- Overview: server cards with CPU, memory, disk, load and sparklines, unhealthy first.
+- Server view (enable the nav item): live canvas charts (uPlot) for CPU, memory, load, disk usage and I/O, network in/out, synced crosshair tooltips, proper units, tabular numerals; top processes table; services status list. Designed empty, loading and error states. Polished, symmetric, Datadog/Grafana-grade layout.
+Run `cargo test`, `cargo check` in src-tauri and `npm run build`; all must pass. Update docs/progress.md (built, verified, not yet verified), then git add -A and commit "Step 2: system collector, Overview and Server views".

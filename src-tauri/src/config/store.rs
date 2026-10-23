@@ -126,5 +126,5 @@ impl ConfigStore {
 
 fn config_path() -> PathBuf {
     let base = dirs::data_local_dir().expect("local data dir");
-    base.join("ServerLens").join("config.json")
+    base.join("Tracelyn").join("config.json")
 }

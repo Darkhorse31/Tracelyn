@@ -1,12 +1,12 @@
 [package]
-name = "serverlens"
+name = "tracelyn"
 version = "0.1.0"
-description = "ServerLens — SSH server monitoring for Windows"
-authors = ["ServerLens"]
+description = "Tracelyn — SSH server monitoring for Windows"
+authors = ["Tracelyn"]
 edition = "2021"
 
 [lib]
-name = "serverlens_lib"
+name = "tracelyn_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -3955,29 +3955,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serverlens"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "dirs 6.0.0",
- "hex",
- "keyring",
- "parking_lot",
- "russh",
- "russh-keys",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "thiserror 2.0.21",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "servo_arc"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4916,6 +4893,29 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
+
+[[package]]
+name = "tracelyn"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "dirs 6.0.0",
+ "hex",
+ "keyring",
+ "parking_lot",
+ "russh",
+ "russh-keys",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "tracing"
