@@ -29,6 +29,8 @@ import { ConnectionStatusBadge } from "@/components/status/connection-status-bad
 import { useServersContext } from "@/contexts/servers-context";
 import { cn } from "cn";
 import { useState } from "react";
+import markLight from "@/assets/tracelyn-mark.png";
+import markDark from "@/assets/tracelyn-mark-dark.png";
 
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, enabled: true },
@@ -50,8 +52,9 @@ export function AppSidebar() {
       <Sidebar collapsible="icon">
         <SidebarHeader className="gap-2 p-2">
           <div className="flex items-center gap-2 px-2 py-1">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Activity />
+            <div className="flex size-8 shrink-0 items-center justify-center">
+              <img src={markLight} alt="Tracelyn" className="size-6 dark:hidden" />
+              <img src={markDark} alt="Tracelyn" className="hidden size-6 dark:block" />
             </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <span className="text-sm font-semibold tracking-tight">Tracelyn</span>
