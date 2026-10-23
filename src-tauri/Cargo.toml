@@ -29,6 +29,7 @@ parking_lot = "0.12"
 base64 = "0.22"
 sha2 = "0.10"
 hex = "0.4"
+regex = "1"
 
 [profile.release]
 codegen-units = 1

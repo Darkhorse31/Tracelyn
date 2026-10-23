@@ -3,6 +3,7 @@ mod config;
 mod secrets;
 mod ssh;
 mod state;
+mod webserver;
 
 use config::ConfigStore;
 use ssh::HostKeyStore;
@@ -25,6 +26,10 @@ pub fn run() {
             commands::test_server_connection,
             commands::connect_server,
             commands::disconnect_server,
+            commands::webtraffic::web_parse_log_line,
+            commands::webtraffic::web_detect_server,
+            commands::webtraffic::web_parse_config,
+            commands::webtraffic::web_normalize_route,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

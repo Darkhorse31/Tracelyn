@@ -1,3 +1,5 @@
+pub mod webtraffic;
+
 use crate::config::{AuthType, ConfigError, ServerRecord};
 use crate::secrets::{delete_secrets, set_secret, SecretKind};
 use crate::ssh::{connect_and_probe, test_connection, ConnectionTestResult};

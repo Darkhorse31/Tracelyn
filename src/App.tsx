@@ -2,7 +2,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { ServersProvider } from "@/contexts/servers-context";
 import { OverviewPage } from "@/pages/overview-page";
+import { ApmEndpointsPage } from "@/pages/apm-endpoints-page";
 import { SettingsPage } from "@/pages/settings-page";
+import { WebTrafficPage } from "@/pages/web-traffic-page";
 
 function App() {
   return (
@@ -11,6 +13,8 @@ function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<OverviewPage />} />
+            <Route path="web" element={<WebTrafficPage />} />
+            <Route path="apm" element={<ApmEndpointsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
