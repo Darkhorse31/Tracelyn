@@ -5,6 +5,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 const TITLES: Record<string, string> = {
   "/": "Overview",
+  "/server": "Server",
   "/settings": "Settings",
 };
 

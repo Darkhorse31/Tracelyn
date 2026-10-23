@@ -1,4 +1,6 @@
 use crate::config::ConfigStore;
+use crate::connection::ConnectionManager;
+use crate::events::EventHub;
 use crate::ssh::HostKeyStore;
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -29,6 +31,8 @@ pub struct ServerStatus {
 pub struct AppState {
     pub config: Mutex<ConfigStore>,
     pub host_keys: Arc<AsyncMutex<HostKeyStore>>,
+    pub event_hub: Arc<EventHub>,
+    pub connections: ConnectionManager,
     connection_status: Mutex<HashMap<String, ServerRuntime>>,
 }
 
@@ -52,10 +56,17 @@ impl Default for ServerRuntime {
 }
 
 impl AppState {
-    pub fn new(config: ConfigStore, host_keys: HostKeyStore) -> Self {
+    pub fn new(
+        config: ConfigStore,
+        host_keys: Arc<AsyncMutex<HostKeyStore>>,
+        event_hub: Arc<EventHub>,
+        connections: ConnectionManager,
+    ) -> Self {
         Self {
             config: Mutex::new(config),
-            host_keys: Arc::new(AsyncMutex::new(host_keys)),
+            host_keys,
+            event_hub,
+            connections,
             connection_status: Mutex::new(HashMap::new()),
         }
     }

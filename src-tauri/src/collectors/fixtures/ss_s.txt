@@ -1,0 +1,7 @@
+Total: 200
+TCP:   150 (estab 80, closed 40, orphaned 0, timewait 5)
+
+Transport Total     IP        IPv6
+RAW       1         0         1
+UDP       4         2         2
+TCP       150       120       30

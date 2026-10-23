@@ -36,3 +36,19 @@ export async function connectServer(id: string): Promise<ServerStatus> {
 export async function disconnectServer(id: string): Promise<ServerStatus> {
   return invoke<ServerStatus>("disconnect_server", { id });
 }
+
+export async function subscribeOverviewMetrics(): Promise<void> {
+  return invoke("subscribe_overview_metrics");
+}
+
+export async function unsubscribeOverviewMetrics(): Promise<void> {
+  return invoke("unsubscribe_overview_metrics");
+}
+
+export async function subscribeServerMetrics(serverId: string): Promise<void> {
+  return invoke("subscribe_server_metrics", { serverId });
+}
+
+export async function unsubscribeServerMetrics(serverId: string): Promise<void> {
+  return invoke("unsubscribe_server_metrics", { serverId });
+}

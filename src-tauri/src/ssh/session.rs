@@ -1,11 +1,12 @@
 use crate::config::{AuthType, ServerRecord};
-use crate::secrets::{get_secret, SecretKind, SecretError};
+use crate::secrets::{get_secret, SecretError, SecretKind};
 use crate::ssh::host_keys::HostKeyStore;
 use async_trait::async_trait;
 use russh::client;
 use russh::ChannelMsg;
 use russh_keys::load_secret_key;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -35,11 +36,13 @@ pub struct ConnectionTestResult {
     pub hostname: Option<String>,
 }
 
-struct SshHandler {
+pub struct SshHandler {
     host: String,
     port: u16,
     host_keys: Arc<Mutex<HostKeyStore>>,
 }
+
+pub type SshSession = client::Handle<SshHandler>;
 
 #[async_trait]
 impl client::Handler for SshHandler {
@@ -91,13 +94,24 @@ pub async fn connect_and_probe(
     test_connection(server, None, None, host_keys).await
 }
 
+pub async fn connect_persistent(
+    server: &ServerRecord,
+    host_keys: Arc<Mutex<HostKeyStore>>,
+) -> Result<SshSession, SshError> {
+    connect(server, None, None, host_keys).await
+}
+
 async fn connect(
     server: &ServerRecord,
     password_override: Option<String>,
     key_passphrase_override: Option<String>,
     host_keys: Arc<Mutex<HostKeyStore>>,
-) -> Result<client::Handle<SshHandler>, SshError> {
-    let config = Arc::new(client::Config::default());
+) -> Result<SshSession, SshError> {
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    });
     let handler = SshHandler {
         host: server.host.clone(),
         port: server.port,
@@ -143,10 +157,7 @@ async fn connect(
     Ok(session)
 }
 
-async fn run_command(
-    session: &client::Handle<SshHandler>,
-    command: &str,
-) -> Result<String, SshError> {
+pub async fn run_command(session: &SshSession, command: &str) -> Result<String, SshError> {
     let mut channel = session.channel_open_session().await?;
     channel.exec(true, command).await?;
     let mut output = String::new();
