@@ -7,6 +7,7 @@ mod metrics;
 mod secrets;
 mod ssh;
 mod state;
+mod webserver;
 
 use config::ConfigStore;
 use connection::ConnectionManager;
@@ -48,6 +49,10 @@ pub fn run() {
             commands::unsubscribe_overview_metrics,
             commands::subscribe_server_metrics,
             commands::unsubscribe_server_metrics,
+            commands::webtraffic::web_parse_log_line,
+            commands::webtraffic::web_detect_server,
+            commands::webtraffic::web_parse_config,
+            commands::webtraffic::web_normalize_route,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

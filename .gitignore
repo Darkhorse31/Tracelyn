@@ -9,10 +9,14 @@ src-tauri/target/
 # Logs
 *.log
 npm-debug.log*
-.step1-log.txt
-.step1-prompt.txt
-.buildtools-log.txt
+.agent-log.txt
+.agent-prompt.txt
+.step*-log.txt
+.step*-prompt.txt
+.rename-*
+.run-step2.ps1
 .install-buildtools.ps1
+.buildtools-log.txt
 
 # Editor / OS
 .DS_Store
