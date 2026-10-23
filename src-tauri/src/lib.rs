@@ -1,3 +1,4 @@
+mod collectors;
 mod commands;
 mod config;
 mod secrets;
@@ -25,6 +26,9 @@ pub fn run() {
             commands::test_server_connection,
             commands::connect_server,
             commands::disconnect_server,
+            commands::redis::set_redis_password,
+            commands::redis::redis_auth_status,
+            commands::redis::redis_snapshot_demo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

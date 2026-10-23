@@ -1,0 +1,18 @@
+# Server
+redis_version:7.2.4
+redis_mode:standalone
+uptime_in_seconds:86400
+# Clients
+connected_clients:42
+# Memory
+used_memory:104857600
+used_memory_peak:125829120
+# Stats
+total_commands_processed:1000000
+instantaneous_ops_per_sec:1250
+keyspace_hits:950000
+keyspace_misses:50000
+evicted_keys:120
+expired_keys:3400
+# Replication
+role:master

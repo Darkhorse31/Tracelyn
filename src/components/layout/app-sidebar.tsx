@@ -35,7 +35,7 @@ const NAV = [
   { to: "/server", label: "Server", icon: Activity, enabled: false },
   { to: "/web", label: "Web traffic", icon: BarChart3, enabled: false },
   { to: "/apm", label: "API endpoints", icon: Route, enabled: false },
-  { to: "/redis", label: "Redis", icon: Database, enabled: false },
+  { to: "/redis", label: "Redis", icon: Database, enabled: true },
   { to: "/alerts", label: "Alerts", icon: AlertTriangle, enabled: false },
   { to: "/settings", label: "Settings", icon: Settings, enabled: true },
 ] as const;

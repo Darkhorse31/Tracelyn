@@ -1,0 +1,8 @@
+﻿node.exe : Connection lost, reconnecting to https://agentn.global.api5.cursor.sh (attempt 1)...
+At C:\Users\lenovo\AppData\Local\cursor-agent\cursor-agent.ps1:71 char:1
++ & "$nodePath" "$scriptPath\versions\$versionName\index.js" $args
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Connection lost... (attempt 1)...:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Retry attempt 1...
