@@ -1,5 +1,5 @@
 //! Web server detection, config parsing, log parsing, route normalization, and aggregation.
-//! Collectors use [`RemoteExec`] so they can be wired to ConnectionManager later.
+//! Collectors use [`RemoteExec`] so they run over the ConnectionManager's SSH session.
 
 mod aggregate;
 mod config;
@@ -8,22 +8,17 @@ mod parse;
 mod quantile;
 mod route;
 
-pub use aggregate::{
-    EndpointMetrics, EndpointSnapshot, LogLineBuffer, TrafficAggregator, TrafficSnapshot,
-};
+pub use aggregate::{TrafficAggregator, HEATMAP_MINUTES};
 pub use config::{
-    ApacheConfigInfo, LogFormatInfo, NginxConfigInfo, ParsedWebConfig, TimingField, WebServerKind,
-    parse_apache_config, parse_nginx_config, suggest_nginx_timing_line, suggest_apache_timing_line,
+    ParsedWebConfig, WebServerKind, parse_apache_config, parse_nginx_config,
+    suggest_nginx_timing_line, suggest_apache_timing_line,
 };
 pub use detect::{DetectedWebServer, detect_from_probe_outputs};
-pub use parse::{
-    AccessLogEntry, LogFormatKind, ParseError, parse_access_line, parse_apache_timing_line,
-};
+pub use parse::{LogFormatKind, parse_access_line};
 
 #[cfg(test)]
 mod tests;
-pub use quantile::StreamingQuantiles;
-pub use route::{RouteNormalizer, RouteRule, normalize_path};
+pub use route::{RouteNormalizer, RouteRule, validate_rules};
 
 use std::future::Future;
 use std::pin::Pin;

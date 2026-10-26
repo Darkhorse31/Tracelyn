@@ -1,0 +1,1 @@
+[{"name":"orders@docker","status":"enabled","serverStatus":{"http://172.18.0.2:3000":"UP","http://172.18.0.3:3000":"DOWN"},"loadBalancer":{"servers":[{"url":"http://172.18.0.2:3000","weight":2},{"url":"http://172.18.0.3:3000"}]}}]

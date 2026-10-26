@@ -7,7 +7,7 @@ use crate::state::AppState;
 use crate::storage::{run_maintenance, RawSample};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 pub fn now_ms() -> i64 {
@@ -84,31 +84,35 @@ pub fn evaluate_live_alerts(
     metrics: HashMap<String, f64>,
 ) {
     let state = app.state::<AppState>();
+    let metrics_for_intel = metrics.clone();
     let input = EvaluationInput {
         server_id: server_id.to_string(),
         ts_ms: now_ms(),
         metrics,
         connected,
     };
-    let store = state.metrics.lock();
-    let outcome = match AlertEngine::evaluate(store.connection(), &input) {
-        Ok(o) => o,
-        Err(err) => {
-            eprintln!("alert evaluate: {}", err);
-            return;
-        }
+    let outcome = {
+        let store = state.metrics.lock();
+        AlertEngine::evaluate(store.connection(), &input)
     };
-    for transition in outcome.transitions {
-        if !transition.fired {
-            continue;
+    match outcome {
+        Ok(outcome) => {
+            for transition in outcome.transitions {
+                let _ = app.emit("alert-transition", &transition);
+                if !transition.fired {
+                    continue;
+                }
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Tracelyn alert")
+                    .body(&transition.message)
+                    .show();
+            }
         }
-        let _ = app
-            .notification()
-            .builder()
-            .title("Tracelyn alert")
-            .body(&transition.message)
-            .show();
+        Err(err) => eprintln!("alert evaluate: {}", err),
     }
+    crate::intel::on_live_sample(app, server_id, connected, &metrics_for_intel);
 }
 
 pub fn spawn_storage_maintenance(app: AppHandle) {

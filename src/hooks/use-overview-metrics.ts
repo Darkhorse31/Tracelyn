@@ -1,5 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { listenWhileMounted } from "@/lib/events";
 import {
   subscribeOverviewMetrics,
   unsubscribeOverviewMetrics,
@@ -16,26 +16,22 @@ export function useOverviewMetrics(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !isLive) return;
 
-    let unlisten: UnlistenFn | undefined;
-
-    void (async () => {
-      await subscribeOverviewMetrics();
-      unlisten = await listen<OverviewServerMetrics[]>(
-        "overview-metrics",
-        (event) => {
-          setByServerId((prev) => {
-            const next = new Map(prev);
-            for (const row of event.payload) {
-              next.set(row.serverId, row);
-            }
-            return next;
-          });
-        },
-      );
-    })();
+    void subscribeOverviewMetrics();
+    const stop = listenWhileMounted<OverviewServerMetrics[]>(
+      "overview-metrics",
+      (event) => {
+        setByServerId((prev) => {
+          const next = new Map(prev);
+          for (const row of event.payload) {
+            next.set(row.serverId, row);
+          }
+          return next;
+        });
+      },
+    );
 
     return () => {
-      void unlisten?.();
+      stop();
       void unsubscribeOverviewMetrics();
     };
   }, [enabled, isLive]);

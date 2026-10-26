@@ -1,3 +1,4 @@
+import { AlertTriangle, CircleCheck, CircleX } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DerivedRedisMetrics } from "@/lib/redis-types";
 import { cn } from "@/lib/utils";
@@ -9,6 +10,11 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+type Tone = "ok" | "warning" | "critical";
+
+const TONE_ICON = { ok: CircleCheck, warning: AlertTriangle, critical: CircleX };
+const TONE_LABEL = { ok: "Healthy", warning: "Warning", critical: "Critical" };
+
 function StatCard({
   title,
   value,
@@ -18,28 +24,32 @@ function StatCard({
   title: string;
   value: string;
   sub?: string;
-  tone?: "ok" | "warning" | "critical" | "info";
+  tone?: Tone;
 }) {
+  const Icon = tone ? TONE_ICON[tone] : null;
   return (
-    <Card className="min-h-[104px]">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="text-xs font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-1">
+      <CardContent className="flex flex-col gap-1">
         <p
           className={cn(
-            "font-mono text-2xl font-medium tabular-nums tracking-tight",
+            "flex items-center gap-2 font-mono text-2xl font-medium tracking-tight",
             tone === "ok" && "text-status-ok",
             tone === "warning" && "text-status-warning",
             tone === "critical" && "text-status-critical",
-            tone === "info" && "text-status-info",
           )}
         >
-          {value}
+          <span className="truncate">{value}</span>
+          {Icon && tone && (
+            <>
+              <Icon className="size-4 shrink-0" aria-hidden />
+              <span className="sr-only">({TONE_LABEL[tone]})</span>
+            </>
+          )}
         </p>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+        {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
   );
@@ -47,33 +57,27 @@ function StatCard({
 
 export function RedisStatCards({ derived }: { derived: DerivedRedisMetrics }) {
   const memRatio = derived.memoryUsedRatio;
-  const memTone =
+  const memTone: Tone | undefined =
     memRatio != null && memRatio >= 0.9
       ? "critical"
       : memRatio != null && memRatio >= 0.75
         ? "warning"
         : undefined;
 
-  const hitTone =
-    derived.hitRatePercent < 80
-      ? "warning"
-      : derived.hitRatePercent >= 95
-        ? "ok"
-        : undefined;
+  const hitTone: Tone | undefined =
+    derived.hitRatePercent < 80 ? "warning" : derived.hitRatePercent >= 95 ? "ok" : undefined;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
         title="Ops / sec"
-        value={derived.opsPerSec.toLocaleString(undefined, {
-          maximumFractionDigits: 0,
-        })}
+        value={derived.opsPerSec.toLocaleString(undefined, { maximumFractionDigits: 0 })}
         sub="instantaneous"
       />
       <StatCard
         title="Hit rate"
         value={`${derived.hitRatePercent.toFixed(1)}%`}
-        sub="keyspace hits / (hits + misses)"
+        sub="hits / (hits + misses)"
         tone={hitTone}
       />
       <StatCard
@@ -82,16 +86,16 @@ export function RedisStatCards({ derived }: { derived: DerivedRedisMetrics }) {
         sub={
           derived.maxmemoryBytes > 0
             ? `${((memRatio ?? 0) * 100).toFixed(0)}% of max · peak ${formatBytes(derived.memoryPeakBytes)}`
-            : `peak ${formatBytes(derived.memoryPeakBytes)}`
+            : `peak ${formatBytes(derived.memoryPeakBytes)} · no maxmemory`
         }
         tone={memTone}
       />
       <StatCard
-        title="Clients · role"
-        value={String(derived.connectedClients)}
-        sub={`replication: ${derived.role}`}
-        tone="info"
+        title="Clients"
+        value={derived.connectedClients.toLocaleString()}
+        sub="connected"
       />
+      <StatCard title="Role" value={derived.role} sub="replication" />
       <StatCard
         title="Total keys"
         value={derived.totalKeys.toLocaleString()}
@@ -106,7 +110,7 @@ export function RedisStatCards({ derived }: { derived: DerivedRedisMetrics }) {
       <StatCard
         title="Expirations"
         value={derived.expiredKeys.toLocaleString()}
-        sub="keys expired"
+        sub="since start"
       />
     </div>
   );

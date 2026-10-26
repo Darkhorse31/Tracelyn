@@ -1,5 +1,5 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { listenWhileMounted } from "@/lib/events";
 import {
   subscribeServerMetrics,
   unsubscribeServerMetrics,
@@ -23,38 +23,40 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
     if (!isLive) {
       let cancelled = false;
       setWaiting(true);
+      const load = async (metricKey: string): Promise<MetricPoint[]> => {
+        const res = await queryMetricSeries({
+          serverId,
+          metricKey,
+          rangeStartMs: range.startMs,
+          rangeEndMs: range.endMs,
+          preferLive: false,
+        });
+        return res.points.map((p) => ({ t: p.tsMs, v: p.value }));
+      };
+      const last = (points: MetricPoint[]) => points[points.length - 1]?.v ?? 0;
       void (async () => {
         try {
-          const cpu = await queryMetricSeries({
-            serverId,
-            metricKey: "cpu.percent",
-            rangeStartMs: range.startMs,
-            rangeEndMs: range.endMs,
-            preferLive: false,
-          });
+          const [cpu, memory, disk, load1] = await Promise.all(
+            ["cpu.percent", "memory.percent", "disk.percent", "load.1"].map(load),
+          );
           if (cancelled) return;
-          const history: MetricPoint[] = cpu.points.map((p) => ({
-            t: p.tsMs,
-            v: p.value,
-          }));
-          const last = history[history.length - 1]?.v ?? 0;
           setSnapshot({
             serverId,
             timestampMs: Date.now(),
-            cpuPercent: last,
-            memoryPercent: 0,
-            load1: 0,
+            cpuPercent: last(cpu),
+            memoryPercent: last(memory),
+            load1: last(load1),
             load5: 0,
             load15: 0,
-            diskPercent: 0,
+            diskPercent: last(disk),
             diskReadBps: 0,
             diskWriteBps: 0,
             netInBps: 0,
             netOutBps: 0,
-            cpuHistory: history,
-            memoryHistory: [],
-            loadHistory: [],
-            diskUsageHistory: [],
+            cpuHistory: cpu,
+            memoryHistory: memory,
+            loadHistory: load1,
+            diskUsageHistory: disk,
             diskReadHistory: [],
             diskWriteHistory: [],
             netInHistory: [],
@@ -64,6 +66,8 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
             ssSummary: {},
             collectorError: null,
           });
+        } catch {
+          if (!cancelled) setSnapshot(null);
         } finally {
           if (!cancelled) setWaiting(false);
         }
@@ -73,20 +77,18 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
       };
     }
 
-    let unlisten: UnlistenFn | undefined;
     setWaiting(true);
-
-    void (async () => {
-      await subscribeServerMetrics(serverId);
-      const eventName = `server-metrics:${serverId}`;
-      unlisten = await listen<ServerMetricsSnapshot>(eventName, (event) => {
+    void subscribeServerMetrics(serverId);
+    const stop = listenWhileMounted<ServerMetricsSnapshot>(
+      `server-metrics:${serverId}`,
+      (event) => {
         setSnapshot(event.payload);
         setWaiting(false);
-      });
-    })();
+      },
+    );
 
     return () => {
-      void unlisten?.();
+      stop();
       void unsubscribeServerMetrics(serverId);
     };
   }, [serverId, enabled, isLive, range.startMs, range.endMs]);

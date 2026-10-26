@@ -10,46 +10,36 @@ function formatDuration(micros: number): string {
 
 export function RedisSlowlogTable({ entries }: { entries: RedisSlowlogEntry[] }) {
   return (
-    <Card className="flex min-h-[320px] flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Slow log</CardTitle>
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="text-sm">Slow log</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 p-0">
+      <CardContent className="flex-1 px-0">
         {entries.length === 0 ? (
-          <p className="px-6 pb-6 text-sm text-muted-foreground">
-            No slow queries in the current window.
-          </p>
+          <p className="px-4 text-sm text-muted-foreground">No slow queries in the current window.</p>
         ) : (
           <ScrollArea className="h-[min(420px,50vh)]">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
+              <caption className="sr-only">Redis slow log, most recent first</caption>
               <thead className="sticky top-0 bg-card">
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">ID</th>
-                  <th className="px-4 py-2 font-medium">Time</th>
-                  <th className="px-4 py-2 font-medium">Duration</th>
-                  <th className="px-4 py-2 font-medium">Client</th>
-                  <th className="px-4 py-2 font-medium">Command</th>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th scope="col" className="w-16 px-4 py-2 font-medium">ID</th>
+                  <th scope="col" className="w-44 px-2 py-2 font-medium">Time</th>
+                  <th scope="col" className="w-24 px-2 py-2 text-right font-medium">Duration</th>
+                  <th scope="col" className="w-36 px-2 py-2 font-medium">Client</th>
+                  <th scope="col" className="px-4 py-2 font-medium">Command</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="font-mono text-xs">
                 {entries.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-border/60 last:border-0 hover:bg-muted/40"
-                  >
-                    <td className="px-4 py-2 font-mono tabular-nums text-muted-foreground">
-                      {row.id}
-                    </td>
-                    <td className="px-4 py-2 font-mono tabular-nums text-xs text-muted-foreground">
+                  <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-muted/40">
+                    <td className="px-4 py-2 text-muted-foreground">{row.id}</td>
+                    <td className="px-2 py-2 text-muted-foreground">
                       {new Date(row.timestampUnix * 1000).toLocaleString()}
                     </td>
-                    <td className="px-4 py-2 font-mono tabular-nums">
-                      {formatDuration(row.durationMicros)}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs">{row.client}</td>
-                    <td className="max-w-[min(480px,40vw)] truncate px-4 py-2 font-mono text-xs">
-                      {row.command}
-                    </td>
+                    <td className="px-2 py-2 text-right">{formatDuration(row.durationMicros)}</td>
+                    <td className="truncate px-2 py-2" title={row.client}>{row.client}</td>
+                    <td className="truncate px-4 py-2" title={row.command}>{row.command}</td>
                   </tr>
                 ))}
               </tbody>

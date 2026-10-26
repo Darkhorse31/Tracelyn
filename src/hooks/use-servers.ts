@@ -1,5 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listenWhileMounted } from "@/lib/events";
 import {
   connectServer,
   deleteServer,
@@ -48,17 +48,13 @@ export function useServers() {
     };
   }, [refresh]);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void listen<ServerStatus[]>("server-statuses", (event) => {
-      setStatuses(event.payload);
-    }).then((fn) => {
-      unlisten = fn;
-    });
-    return () => {
-      void unlisten?.();
-    };
-  }, []);
+  useEffect(
+    () =>
+      listenWhileMounted<ServerStatus[]>("server-statuses", (event) => {
+        setStatuses(event.payload);
+      }),
+    [],
+  );
 
   const statusById = useMemo(() => {
     const map = new Map<string, ServerStatus>();

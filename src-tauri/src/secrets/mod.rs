@@ -15,6 +15,8 @@ pub enum SecretKind {
     Password,
     KeyPassphrase,
     RedisPassword,
+    RedisUsername,
+    SudoPassword,
 }
 
 impl SecretKind {
@@ -23,6 +25,8 @@ impl SecretKind {
             SecretKind::Password => "password",
             SecretKind::KeyPassphrase => "key_passphrase",
             SecretKind::RedisPassword => "redis_password",
+            SecretKind::RedisUsername => "redis_username",
+            SecretKind::SudoPassword => "sudo_password",
         };
         format!("server:{}:{}", server_id, suffix)
     }
@@ -46,6 +50,8 @@ pub fn delete_secrets(server_id: &str) {
         SecretKind::Password,
         SecretKind::KeyPassphrase,
         SecretKind::RedisPassword,
+        SecretKind::RedisUsername,
+        SecretKind::SudoPassword,
     ] {
         if let Ok(entry) = keyring::Entry::new(SERVICE, &SecretKind::account(server_id, kind)) {
             let _ = entry.delete_credential();

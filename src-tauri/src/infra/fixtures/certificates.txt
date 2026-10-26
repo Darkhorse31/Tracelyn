@@ -1,0 +1,9 @@
+__CERT__	/etc/letsencrypt/live/api/cert.pem
+notAfter=Oct 30 12:00:00 2026 GMT
+subject=CN=api.example.com
+__CERT__	/etc/letsencrypt/live/www/cert.pem
+notAfter=Nov 10 12:00:00 2026 GMT
+subject=CN=www.example.com
+__CERT__	/etc/ssl/certs/site.pem
+notAfter=Jan  2 12:00:00 2027 GMT
+subject=CN=example.com

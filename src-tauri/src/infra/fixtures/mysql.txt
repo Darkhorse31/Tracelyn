@@ -1,0 +1,12 @@
+Threads_connected	12
+Queries	3000
+Slow_queries	8
+Uptime	3600
+Innodb_buffer_pool_reads	10
+Innodb_buffer_pool_read_requests	1000
+__SIZES__
+orders	1048576
+__REPLICATION__
+*************************** 1. row ***************************
+             Slave_IO_Running: Yes
+        Seconds_Behind_Master: 2

@@ -1,0 +1,1 @@
+{"page":1,"page_count":1,"items":[{"name":"jobs","vhost":"/shop","state":"running","messages":42,"messages_ready":40,"messages_unacknowledged":2,"consumers":3,"message_stats":{"publish_details":{"rate":3.5},"deliver_get_details":{"rate":3.0}}}]}

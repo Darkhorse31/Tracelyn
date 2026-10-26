@@ -1,0 +1,2 @@
+{"ID":"abc123","Names":"/web-app","State":"running","Ports":"0.0.0.0:3000->3000/tcp","Label":"com.docker.compose.project=web"}
+{"ID":"def456","Names":"/redis","State":"running","Ports":"6379/tcp","Label":""}

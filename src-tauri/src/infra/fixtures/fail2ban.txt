@@ -1,0 +1,7 @@
+__JAIL__	sshd
+Status for the jail: sshd
+|- Filter
+|  `- Total failed: 42
+`- Actions
+   |- Currently banned: 2
+   `- Banned IP list: 198.51.100.4 203.0.113.9

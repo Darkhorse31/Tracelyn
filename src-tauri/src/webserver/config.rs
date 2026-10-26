@@ -52,13 +52,17 @@ pub enum ParsedWebConfig {
 
 pub fn suggest_nginx_timing_line(format_name: &str) -> String {
     format!(
-        "log_format {name} '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" $request_time $upstream_response_time';",
+        "log_format {name} '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" $request_time $upstream_response_time';\naccess_log /var/log/nginx/access.log {name};\nnginx -t\nsystemctl reload nginx",
         name = format_name
     )
 }
 
 pub fn suggest_apache_timing_line() -> String {
-    r#"LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D" combined_timing"#.to_string()
+    r#"LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D" combined_timing
+CustomLog ${APACHE_LOG_DIR}/access.log combined_timing
+apache2ctl configtest
+systemctl reload apache2"#
+        .to_string()
 }
 
 fn strip_comments(line: &str) -> String {

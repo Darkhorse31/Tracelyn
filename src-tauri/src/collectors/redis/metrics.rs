@@ -132,6 +132,7 @@ impl RedisSnapshot {
             keyspace,
             slowlog,
             derived: derived_payload,
+            collector_state: None,
         }
     }
 }
