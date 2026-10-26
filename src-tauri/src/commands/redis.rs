@@ -1,6 +1,12 @@
-use crate::collectors::redis::RedisSnapshot;
+use crate::collectors::redis::{ping, Dial};
+use crate::config::RedisTargetConfig;
+use crate::connection::redis_probe::probe_redis_endpoints;
 use crate::secrets::{get_secret, set_secret, SecretError, SecretKind};
+use crate::ssh::connect_persistent;
+use crate::state::AppState;
+use russh::Disconnect;
 use serde::Serialize;
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,46 +36,88 @@ pub fn redis_auth_status(server_id: String) -> Result<RedisAuthStatus, String> {
     Ok(RedisAuthStatus { configured })
 }
 
-/// Parses fixture files and returns a snapshot (for UI/dev validation without SSH).
 #[tauri::command]
-pub fn redis_snapshot_demo() -> Result<RedisSnapshot, String> {
-    use crate::collectors::redis::{
-        derive_metrics, parse_config_get_maxmemory, parse_info_all, parse_info_keyspace,
-        parse_slowlog_get, RateState, RedisSnapshot,
-    };
-    use std::time::Duration;
-
-    fn fixture(name: &str) -> Result<String, String> {
-        std::fs::read_to_string(format!(
-            "{}/tests/fixtures/redis/{}",
-            env!("CARGO_MANIFEST_DIR"),
-            name
-        ))
-        .map_err(|e| e.to_string())
+pub fn set_redis_username(server_id: String, username: String) -> Result<(), String> {
+    if username.is_empty() {
+        return Ok(());
     }
+    set_secret(&server_id, SecretKind::RedisUsername, &username).map_err(map_err)
+}
 
-    let info = parse_info_all(&fixture("info_all.txt")?).map_err(map_err)?;
-    let keyspace = parse_info_keyspace(&fixture("info_keyspace.txt")?).map_err(map_err)?;
-    let slowlog = parse_slowlog_get(&fixture("slowlog_get.txt")?).map_err(map_err)?;
-    let maxmemory = parse_config_get_maxmemory(&fixture("config_maxmemory.txt")?).map_err(map_err)?;
+#[tauri::command]
+pub fn set_redis_target(
+    state: State<AppState>,
+    server_id: String,
+    target: RedisTargetConfig,
+) -> Result<(), String> {
+    let mut config = state.config.lock();
+    config
+        .set_redis_target(&server_id, target)
+        .map_err(map_err)?;
+    config.save().map_err(map_err)
+}
 
-    let mut rate = RateState::default();
-    let derived = derive_metrics(
-        &info,
-        &keyspace,
-        maxmemory,
-        &mut rate,
-        Duration::from_secs(5),
-    );
+#[tauri::command]
+pub fn get_redis_target(state: State<AppState>, server_id: String) -> RedisTargetConfig {
+    state.config.lock().redis_target(&server_id)
+}
 
-    Ok(RedisSnapshot::from_parts(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-        info,
-        keyspace,
-        slowlog,
-        derived,
-    ))
+#[tauri::command]
+pub async fn test_redis_connection(
+    app: AppHandle,
+    server_id: String,
+    target: Option<RedisTargetConfig>,
+) -> Result<String, String> {
+    let state = app.state::<AppState>();
+    let server = state
+        .config
+        .lock()
+        .get_server(&server_id)
+        .map_err(map_err)?
+        .clone();
+    let saved = target.unwrap_or_else(|| state.config.lock().redis_target(&server_id));
+    let host_keys = state.host_keys.clone();
+    let session = connect_persistent(&server, host_keys)
+        .await
+        .map_err(map_err)?;
+    let endpoints = probe_redis_endpoints(&session).await;
+    let mut dial = endpoints
+        .first()
+        .map(|endpoint| endpoint.to_dial())
+        .unwrap_or_else(|| Dial::loopback(saved.port.unwrap_or(6379)));
+    if let Some(port) = saved.port {
+        dial.port = port;
+        dial.host = "127.0.0.1".into();
+        dial.bind_label = format!("127.0.0.1:{port}");
+    }
+    if let Some(socket) = saved.socket.filter(|value| !value.is_empty()) {
+        dial.socket = Some(socket);
+    }
+    if let Some(container) = saved.docker_container.filter(|value| !value.is_empty()) {
+        dial.docker = Some(container);
+    }
+    let password = match get_secret(&server_id, SecretKind::RedisPassword) {
+        Ok(value) => Some(value),
+        Err(SecretError::NotFound(_)) => None,
+        Err(err) => return Err(map_err(err)),
+    };
+    let username = get_secret(&server_id, SecretKind::RedisUsername).ok();
+    let result = ping(
+        &session,
+        &dial,
+        username.as_deref(),
+        password.as_deref(),
+    )
+    .await
+    .map_err(|err| err.message());
+    let _ = session.disconnect(Disconnect::ByApplication, "", "en").await;
+    result
+}
+
+#[tauri::command]
+pub fn get_redis_snapshot(
+    state: State<AppState>,
+    server_id: String,
+) -> Option<serde_json::Value> {
+    state.event_hub.last_redis_snapshot(&server_id)
 }

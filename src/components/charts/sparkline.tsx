@@ -1,35 +1,46 @@
+import { useId } from "react";
 import { cn } from "cn";
+import { type ChartColor, chartColorVar } from "@/lib/chart-theme";
 
 interface SparklineProps {
   values: number[];
   className?: string;
-  color?: string;
+  color?: ChartColor;
   max?: number;
 }
 
 export function Sparkline({
   values,
   className,
-  color = "var(--chart-1)",
+  color = "blue",
   max = 100,
 }: SparklineProps) {
+  const gradientId = `spark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+
+  if (values.length < 2) {
+    return (
+      <div
+        className={cn(
+          "flex h-8 w-full items-center text-[11px] text-muted-foreground",
+          className,
+        )}
+      >
+        Waiting for data
+      </div>
+    );
+  }
+
+  const stroke = chartColorVar(color);
   const w = 120;
   const h = 32;
-  const data = values.length > 0 ? values : [0];
-  const min = 0;
-  const top = max;
-  const step = w / Math.max(data.length - 1, 1);
+  const step = w / (values.length - 1);
 
-  const points = data
+  const points = values
     .map((v, i) => {
-      const x = i * step;
-      const clamped = Math.min(top, Math.max(min, v));
-      const y = h - (clamped / top) * h;
-      return `${x},${y}`;
+      const clamped = Math.min(max, Math.max(0, v));
+      return `${i * step},${h - (clamped / max) * h}`;
     })
     .join(" ");
-
-  const area = `0,${h} ${points} ${w},${h}`;
 
   return (
     <svg
@@ -38,12 +49,18 @@ export function Sparkline({
       preserveAspectRatio="none"
       aria-hidden
     >
-      <polygon points={area} fill={color} fillOpacity={0.15} />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity={0.25} />
+          <stop offset="100%" stopColor={stroke} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,${h} ${points} ${w},${h}`} fill={`url(#${gradientId})`} />
       <polyline
         points={points}
         fill="none"
-        stroke={color}
-        strokeWidth={1.5}
+        stroke={stroke}
+        strokeWidth={1.75}
         vectorEffect="non-scaling-stroke"
       />
     </svg>

@@ -1,0 +1,5 @@
+VirtualHost configuration:
+*:80                   is a NameVirtualHost
+         port 80 namevhost example.com (/etc/apache2/sites-enabled/example.conf:1)
+         port 80 namevhost api.example.com (/etc/apache2/sites-enabled/api.conf:1)
+CustomLog /var/log/apache2/example_access.log combined

@@ -1,3 +1,10 @@
+pub mod apps;
+pub mod diagnostics;
+pub mod setup;
+pub mod ops;
+pub mod insight;
+pub mod intel;
+pub mod logs;
 pub mod redis;
 pub mod storage_alerts;
 pub mod webtraffic;
@@ -101,10 +108,13 @@ pub async fn delete_server(
     id: String,
 ) -> Result<(), String> {
     state.connections.disconnect(&id).await;
+    state.ops.drop_server(&id).await;
+    crate::infra::remove_server_data(&state, &id)?;
     let mut config = state.config.lock();
     config.delete_server(&id).map_err(map_err)?;
     config.save().map_err(map_err)?;
     delete_secrets(&id);
+    drop(config);
     state.set_runtime(
         &id,
         ServerRuntime {
@@ -167,6 +177,7 @@ pub async fn disconnect_server(
     id: String,
 ) -> Result<ServerStatus, String> {
     state.connections.disconnect(&id).await;
+    state.ops.drop_server(&id).await;
     state.set_runtime(
         &id,
         ServerRuntime {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { OperationsModeCard } from "@/components/ops/operations-mode-card";
+import { ThemeRadioGroup } from "@/components/theme/theme-controls";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { ConnectionStatusBadge } from "@/components/status/connection-status-badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +46,19 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>
+            Light, dark, or match your operating system. Applies to charts and
+            the window title bar.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemeRadioGroup />
+        </CardContent>
+      </Card>
+      <OperationsModeCard />
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div>

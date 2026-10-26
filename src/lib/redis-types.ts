@@ -33,12 +33,34 @@ export interface DerivedRedisMetrics {
   totalKeys: number;
 }
 
+export type RedisPhase =
+  | "not_installed"
+  | "auth_required"
+  | "connection_refused"
+  | "timed_out"
+  | "loading"
+  | "live";
+
+export interface RedisCollectorState {
+  phase: RedisPhase | string;
+  message?: string | null;
+}
+
+export interface RedisInstanceRef {
+  label: string;
+  port?: number | null;
+  socket?: string | null;
+  dockerContainer?: string | null;
+}
+
 export interface RedisSnapshot {
   collectedAtMs: number;
   info: RedisInfoPayload;
   keyspace: RedisDbKeyspace[];
   slowlog: RedisSlowlogEntry[];
   derived: DerivedRedisMetrics;
+  collectorState?: RedisCollectorState | null;
+  instances?: RedisInstanceRef[];
 }
 
 /** Time-series point for charts (mock / live). */

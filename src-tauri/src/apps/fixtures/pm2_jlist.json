@@ -1,0 +1,35 @@
+[
+  {
+    "name": "api-gateway",
+    "pm_id": 0,
+    "pid": 12345,
+    "monit": { "cpu": 2.5, "memory": 104857600 },
+    "pm2_env": {
+      "status": "online",
+      "restart_time": 1,
+      "pm_uptime": 86400000,
+      "pm_out_log_path": "/root/.pm2/logs/api-gateway-out.log",
+      "pm_err_log_path": "/root/.pm2/logs/api-gateway-error.log",
+      "pm_cwd": "/var/www/api",
+      "exec_interpreter": "node"
+    }
+  },
+  {
+    "name": "worker",
+    "pm_id": 1,
+    "pid": 12346,
+    "monit": { "cpu": 0.1, "memory": 52428800 },
+    "pm2_env": {
+      "status": "online",
+      "pm_out_log_path": "/home/deploy/.pm2/logs/worker-out.log",
+      "pm_err_log_path": "/home/deploy/.pm2/logs/worker-error.log"
+    }
+  },
+  {
+    "name": "legacy-php",
+    "pm_id": 2,
+    "pid": 0,
+    "monit": { "cpu": 0, "memory": 0 },
+    "pm2_env": { "status": "stopped" }
+  }
+]

@@ -87,13 +87,6 @@ pub async fn test_connection(
     })
 }
 
-pub async fn connect_and_probe(
-    server: &ServerRecord,
-    host_keys: Arc<Mutex<HostKeyStore>>,
-) -> Result<ConnectionTestResult, SshError> {
-    test_connection(server, None, None, host_keys).await
-}
-
 pub async fn connect_persistent(
     server: &ServerRecord,
     host_keys: Arc<Mutex<HostKeyStore>>,
@@ -157,16 +150,25 @@ async fn connect(
     Ok(session)
 }
 
-/// Stream access-log lines from `tail -F` on a dedicated SSH channel.
+/// Stream access-log lines from `tail -n 500 -F` on a dedicated SSH channel.
 pub async fn start_tail_follow(
     session: &SshSession,
     log_path: &str,
-) -> Result<tokio::sync::mpsc::UnboundedReceiver<Result<String, String>>, SshError> {
-    let mut channel = session.channel_open_session().await?;
+) -> Result<tokio::sync::mpsc::Receiver<Result<String, String>>, SshError> {
     let escaped = log_path.replace('\'', "'\\''");
-    let cmd = format!("tail -n 0 -F -- '{}' 2>&1", escaped);
-    channel.exec(false, cmd).await?;
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let cmd = format!("tail -n 500 -F -- '{escaped}' 2>&1");
+    start_command_follow(session, &cmd).await
+}
+
+/// Follow a remote command (tail, journalctl, docker logs). Bounded channel drops
+/// lines when the collector falls behind.
+pub async fn start_command_follow(
+    session: &SshSession,
+    cmd: &str,
+) -> Result<tokio::sync::mpsc::Receiver<Result<String, String>>, SshError> {
+    let mut channel = session.channel_open_session().await?;
+    channel.exec(false, cmd.to_string()).await?;
+    let (tx, rx) = tokio::sync::mpsc::channel(2048);
     tauri::async_runtime::spawn(async move {
         let mut buf = String::new();
         while let Some(msg) = channel.wait().await {
@@ -179,19 +181,26 @@ pub async fn start_tail_follow(
                         if line.is_empty() {
                             continue;
                         }
-                        if line.contains("Permission denied")
+                        let item = if line.contains("Permission denied")
                             || line.contains("cannot open")
                             || line.contains("No such file")
                         {
-                            let _ = tx.send(Err(line));
-                            continue;
+                            Err(line)
+                        } else {
+                            Ok(line)
+                        };
+                        match tx.try_send(item) {
+                            Ok(()) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => return,
                         }
-                        let _ = tx.send(Ok(line));
                     }
                 }
                 ChannelMsg::ExitStatus { exit_status } => {
                     if exit_status != 0 {
-                        let _ = tx.send(Err(format!("tail exited with status {}", exit_status)));
+                        let _ = tx
+                            .try_send(Err(format!("follow exited with status {exit_status}")))
+                            .ok();
                     }
                     break;
                 }
@@ -201,6 +210,65 @@ pub async fn start_tail_follow(
         }
     });
     Ok(rx)
+}
+
+pub async fn run_command_bytes(session: &SshSession, command: &str) -> Result<Vec<u8>, SshError> {
+    let mut channel = session.channel_open_session().await?;
+    channel.exec(true, command).await?;
+    let mut output = Vec::new();
+    loop {
+        match channel.wait().await {
+            Some(ChannelMsg::Data { data }) => output.extend_from_slice(&data),
+            Some(ChannelMsg::ExitStatus { exit_status }) => {
+                if exit_status != 0 && output.is_empty() {
+                    return Err(SshError::Command(format!(
+                        "exit status {exit_status} for `{command}`"
+                    )));
+                }
+                break;
+            }
+            Some(ChannelMsg::Eof) | None => break,
+            _ => {}
+        }
+    }
+    Ok(output)
+}
+
+/// Like [`run_command`], but stderr is kept and the command text is not returned.
+/// Redis uses this so a refused connection is visible and a password in the command is not.
+pub async fn run_command_merged(session: &SshSession, command: &str) -> Result<String, SshError> {
+    let joined = tokio::time::timeout(Duration::from_secs(8), async {
+        let mut channel = session.channel_open_session().await?;
+        channel.exec(true, command).await?;
+        let mut output = String::new();
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Data { data }) => {
+                    output.push_str(&String::from_utf8_lossy(&data));
+                }
+                Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    output.push_str(&String::from_utf8_lossy(&data));
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    if exit_status != 0 {
+                        if output.trim().is_empty() {
+                            output = format!("exit status {exit_status}");
+                        }
+                        return Err(SshError::Command(output));
+                    }
+                    break;
+                }
+                Some(ChannelMsg::Eof) | None => break,
+                _ => {}
+            }
+        }
+        Ok(output)
+    })
+    .await;
+    match joined {
+        Ok(result) => result,
+        Err(_) => Err(SshError::Command("timed out".into())),
+    }
 }
 
 pub async fn run_command(session: &SshSession, command: &str) -> Result<String, SshError> {

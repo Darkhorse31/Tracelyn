@@ -36,10 +36,6 @@ impl StreamingQuantiles {
         self.p99.observe(value);
     }
 
-    pub fn count(&self) -> u64 {
-        self.count
-    }
-
     pub fn avg_ms(&self) -> Option<f64> {
         if self.count == 0 {
             return None;

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::aggregate::TrafficAggregator;
+    use super::super::aggregate::{TrafficAggregator, HEATMAP_MINUTES};
     use super::super::config::{parse_apache_config, parse_nginx_config, ParsedWebConfig};
     use super::super::detect::detect_from_probe_outputs;
     use super::super::parse::{
@@ -54,6 +54,8 @@ mod tests {
         let e = parse_apache_timing_line(line).unwrap();
         let ms = e.request_time_secs.unwrap() * 1000.0;
         assert!((ms - 125.0).abs() < 0.1);
+        let via = parse_access_line(line, LogFormatKind::ApacheTiming).unwrap();
+        assert!((via.request_time_secs.unwrap() - 0.125).abs() < 0.001);
     }
 
     #[test]
@@ -164,5 +166,25 @@ mod tests {
             .unwrap();
         assert!(normalized.p50_ms.is_some());
         assert_eq!(normalized.request_count, 100);
+    }
+
+    #[test]
+    fn heatmap_drops_buckets_outside_window() {
+        let mut agg = TrafficAggregator::new(60, RouteNormalizer::default());
+        let line = r#"1.2.3.4 - - [23/Oct/2026:10:00:00 +0000] "GET /a HTTP/1.1" 200 10 "-" "-" 0.05 0.04"#;
+        let entry = parse_access_line(line, LogFormatKind::Custom).unwrap();
+        let start = 60 * 1_000_000u64;
+        agg.ingest(&entry, start);
+        agg.ingest(&entry, start + 60 * (HEATMAP_MINUTES - 1));
+        assert_eq!(agg.endpoint_snapshot().heatmap.len(), 2);
+        agg.ingest(&entry, start + 60 * HEATMAP_MINUTES);
+        let buckets: Vec<u64> = agg
+            .endpoint_snapshot()
+            .heatmap
+            .iter()
+            .map(|c| c.bucket_secs)
+            .collect();
+        assert_eq!(buckets.len(), 2);
+        assert!(buckets.iter().all(|b| *b > start));
     }
 }

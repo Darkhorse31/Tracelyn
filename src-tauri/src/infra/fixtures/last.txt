@@ -1,0 +1,4 @@
+deploy pts/0 198.51.100.5 Mon Oct 26 01:00:00 2026 still logged in
+reboot system boot 6.8.0 Mon Oct 26 00:00:00 2026 still running
+
+wtmp begins Mon Oct 26 00:00:00 2026

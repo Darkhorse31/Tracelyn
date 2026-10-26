@@ -15,7 +15,7 @@ use crate::ssh::{run_command, SshSession};
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub use systemctl::{DEFAULT_SERVICE_CANDIDATES, systemctl_is_active_command};
+pub use systemctl::DEFAULT_SERVICE_CANDIDATES;
 
 #[derive(Default)]
 struct Ring {

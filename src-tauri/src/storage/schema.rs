@@ -40,6 +40,7 @@ impl MetricStore {
         Ok(store)
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self, StoreError> {
         let conn = Connection::open_in_memory()?;
         let store = Self {
@@ -97,6 +98,8 @@ impl MetricStore {
                 ON metric_rollup (server_id, metric_key, bucket_ts_ms);
             ",
         )?;
+        crate::insight::migrate(&self.conn)?;
+        crate::ops::migrate(&self.conn)?;
         Ok(())
     }
 

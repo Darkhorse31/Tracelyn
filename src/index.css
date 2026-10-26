@@ -33,11 +33,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  --color-overlay: var(--overlay);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -51,100 +47,200 @@
   --color-status-warning: var(--status-warning);
   --color-status-critical: var(--status-critical);
   --color-status-info: var(--status-info);
+  --color-status-critical-foreground: var(--status-critical-foreground);
   --font-heading: var(--font-sans);
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Contrast targets (WCAG 2.2 AA), checked for both themes:
+ * text tokens >= 4.5:1 on background, card, muted and on their own 15% tint;
+ * --input, --ring, status and chart colors >= 3:1 on card.
+ */
 :root {
+  color-scheme: light;
   --radius: 0.5rem;
-  --background: oklch(0.985 0.002 247);
+  --background: oklch(0.985 0.003 255);
   --foreground: oklch(0.21 0.02 255);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.21 0.02 255);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.02 255);
-  --primary: oklch(0.55 0.18 255);
+  --primary: oklch(0.52 0.19 258);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.005 255);
-  --secondary-foreground: oklch(0.28 0.02 255);
-  --muted: oklch(0.96 0.005 255);
-  --muted-foreground: oklch(0.5 0.02 255);
-  --accent: oklch(0.94 0.01 255);
-  --accent-foreground: oklch(0.28 0.02 255);
-  --destructive: oklch(0.55 0.22 25);
-  --border: oklch(0.9 0.01 255);
-  --input: oklch(0.9 0.01 255);
-  --ring: oklch(0.55 0.18 255);
-  --chart-1: oklch(0.55 0.18 255);
-  --chart-2: oklch(0.65 0.15 165);
-  --chart-3: oklch(0.7 0.14 85);
-  --chart-4: oklch(0.6 0.2 305);
-  --chart-5: oklch(0.55 0.22 25);
-  --sidebar: oklch(0.98 0.003 255);
-  --sidebar-foreground: oklch(0.35 0.02 255);
-  --sidebar-primary: oklch(0.55 0.18 255);
+  --secondary: oklch(0.96 0.006 255);
+  --secondary-foreground: oklch(0.27 0.02 255);
+  --muted: oklch(0.96 0.006 255);
+  --muted-foreground: oklch(0.47 0.02 255);
+  --accent: oklch(0.945 0.012 255);
+  --accent-foreground: oklch(0.25 0.02 255);
+  --destructive: oklch(0.5 0.2 25);
+  --border: oklch(0.91 0.008 255);
+  --input: oklch(0.64 0.02 255);
+  --ring: oklch(0.52 0.19 258);
+  --overlay: oklch(0.21 0.02 255 / 0.4);
+  --sidebar: oklch(0.975 0.004 255);
+  --sidebar-foreground: oklch(0.3 0.02 255);
+  --sidebar-primary: oklch(0.52 0.19 258);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.94 0.01 255);
+  --sidebar-accent: oklch(0.935 0.012 255);
   --sidebar-accent-foreground: oklch(0.21 0.02 255);
-  --sidebar-border: oklch(0.9 0.01 255);
-  --sidebar-ring: oklch(0.55 0.18 255);
-  --status-ok: oklch(0.62 0.17 145);
-  --status-warning: oklch(0.75 0.15 75);
-  --status-critical: oklch(0.58 0.22 25);
-  --status-info: oklch(0.55 0.18 255);
+  --sidebar-border: oklch(0.91 0.008 255);
+  --sidebar-ring: oklch(0.52 0.19 258);
+
+  --status-ok: oklch(0.46 0.12 150);
+  --status-warning: oklch(0.5 0.11 65);
+  --status-critical: oklch(0.49 0.19 25);
+  --status-info: oklch(0.49 0.17 258);
+  --status-critical-foreground: oklch(0.99 0 0);
+
+  /* Okabe-Ito hues, darkened where needed for 3:1 on white. */
+  --chart-blue: #0072b2;
+  --chart-sky: #2a85c0;
+  --chart-green: #008a64;
+  --chart-orange: #b06d00;
+  --chart-vermillion: #c25400;
+  --chart-purple: #a9508a;
+  --chart-grid: oklch(0.21 0.02 255 / 0.08);
+
+  /* Viridis steps, low -> high latency. */
+  --heat-0: #a0da39;
+  --heat-1: #4ac16d;
+  --heat-2: #1fa187;
+  --heat-3: #277f8e;
+  --heat-4: #3b528b;
+  --heat-5: #440154;
 }
 
 .dark {
-  --background: oklch(0.17 0.02 255);
-  --foreground: oklch(0.93 0.01 255);
-  --card: oklch(0.2 0.02 255);
-  --card-foreground: oklch(0.93 0.01 255);
-  --popover: oklch(0.2 0.02 255);
-  --popover-foreground: oklch(0.93 0.01 255);
-  --primary: oklch(0.62 0.17 255);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.24 0.02 255);
-  --secondary-foreground: oklch(0.93 0.01 255);
-  --muted: oklch(0.24 0.02 255);
-  --muted-foreground: oklch(0.65 0.02 255);
-  --accent: oklch(0.26 0.025 255);
-  --accent-foreground: oklch(0.93 0.01 255);
-  --destructive: oklch(0.58 0.22 25);
-  --border: oklch(0.28 0.02 255);
-  --input: oklch(0.28 0.02 255);
-  --ring: oklch(0.62 0.17 255);
-  --chart-1: oklch(0.62 0.17 255);
-  --chart-2: oklch(0.7 0.14 165);
-  --chart-3: oklch(0.75 0.14 85);
-  --chart-4: oklch(0.65 0.18 305);
-  --chart-5: oklch(0.58 0.22 25);
-  --sidebar: oklch(0.15 0.02 255);
-  --sidebar-foreground: oklch(0.85 0.01 255);
-  --sidebar-primary: oklch(0.62 0.17 255);
-  --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.22 0.025 255);
-  --sidebar-accent-foreground: oklch(0.93 0.01 255);
-  --sidebar-border: oklch(0.26 0.02 255);
-  --sidebar-ring: oklch(0.62 0.17 255);
-  --status-ok: oklch(0.68 0.17 145);
-  --status-warning: oklch(0.78 0.14 75);
-  --status-critical: oklch(0.62 0.22 25);
-  --status-info: oklch(0.62 0.17 255);
+  color-scheme: dark;
+  --background: oklch(0.17 0.015 255);
+  --foreground: oklch(0.94 0.008 255);
+  --card: oklch(0.205 0.017 255);
+  --card-foreground: oklch(0.94 0.008 255);
+  --popover: oklch(0.23 0.018 255);
+  --popover-foreground: oklch(0.94 0.008 255);
+  --primary: oklch(0.72 0.14 255);
+  --primary-foreground: oklch(0.18 0.03 255);
+  --secondary: oklch(0.25 0.018 255);
+  --secondary-foreground: oklch(0.94 0.008 255);
+  --muted: oklch(0.25 0.018 255);
+  --muted-foreground: oklch(0.71 0.02 255);
+  --accent: oklch(0.27 0.022 255);
+  --accent-foreground: oklch(0.94 0.008 255);
+  --destructive: oklch(0.72 0.17 22);
+  --border: oklch(0.29 0.018 255);
+  --input: oklch(0.52 0.02 255);
+  --ring: oklch(0.72 0.14 255);
+  --overlay: oklch(0.08 0.01 255 / 0.6);
+  --sidebar: oklch(0.155 0.015 255);
+  --sidebar-foreground: oklch(0.87 0.01 255);
+  --sidebar-primary: oklch(0.72 0.14 255);
+  --sidebar-primary-foreground: oklch(0.18 0.03 255);
+  --sidebar-accent: oklch(0.235 0.022 255);
+  --sidebar-accent-foreground: oklch(0.94 0.008 255);
+  --sidebar-border: oklch(0.27 0.018 255);
+  --sidebar-ring: oklch(0.72 0.14 255);
+
+  --status-ok: oklch(0.76 0.15 150);
+  --status-warning: oklch(0.82 0.14 78);
+  --status-critical: oklch(0.72 0.17 22);
+  --status-info: oklch(0.74 0.13 255);
+  --status-critical-foreground: oklch(0.17 0.03 22);
+
+  --chart-blue: #4ea3e6;
+  --chart-sky: #8fd1f5;
+  --chart-green: #1fbf91;
+  --chart-orange: #e69f00;
+  --chart-vermillion: #f07a3a;
+  --chart-purple: #d68cb8;
+  --chart-grid: oklch(1 0 0 / 0.07);
+
+  --heat-0: #31688e;
+  --heat-1: #26828e;
+  --heat-2: #1f9e89;
+  --heat-3: #35b779;
+  --heat-4: #90d743;
+  --heat-5: #fde725;
+}
+
+/* uPlot crosshair lines are DOM elements, so CSS variables resolve here. */
+.tracelyn-uplot.uplot .u-cursor-x,
+.tracelyn-uplot.uplot .u-cursor-y {
+  border-color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* Applied briefly by the theme switcher so colors cross-fade instead of snapping. */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition-property: background-color, border-color, color, fill, stroke !important;
+  transition-duration: 200ms !important;
+  transition-timing-function: ease-out !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
+  }
+  html {
+    @apply font-sans;
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    /* Live values must not jitter as digits change. */
+    font-variant-numeric: tabular-nums;
+  }
+  /* Fallback for native controls without their own focus ring utility. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   .font-tabular {
     font-variant-numeric: tabular-nums;
   }
-  html {
-    @apply font-sans;
+  * {
+    scrollbar-color: var(--border) var(--background);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--background);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    caret-color: var(--foreground);
+    box-shadow: 0 0 0 1000px var(--background) inset;
+  }
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="time"],
+  input[type="month"],
+  input[type="week"] {
+    color-scheme: inherit;
   }
 }

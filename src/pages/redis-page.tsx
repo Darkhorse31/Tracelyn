@@ -1,10 +1,12 @@
-import { useState } from "react";
-import { KeyRound, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Database, KeyRound, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { RedisCharts } from "@/components/redis/redis-charts";
 import { RedisKeyspaceTable } from "@/components/redis/redis-keyspace-table";
 import { RedisSlowlogTable } from "@/components/redis/redis-slowlog-table";
 import { RedisStatCards } from "@/components/redis/redis-stat-cards";
+import { HowToFix } from "@/components/setup/how-to-fix";
+import { EmptyState, Notice } from "@/components/status/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,10 +21,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRedisDashboard } from "@/hooks/use-redis-dashboard";
+import { getRedisTarget, testRedisConnection, type RedisTargetConfig } from "@/lib/api";
+import { SimpleSelect } from "@/components/ui/select";
 import { useServersContext } from "@/contexts/servers-context";
+import { useTimeRange } from "@/contexts/time-range-context";
+
+/** The collector's first poll runs ~10 s after connect; allow two cycles before giving up. */
+const DETECT_TIMEOUT_MS = 25_000;
 
 export function RedisPage() {
-  const { selectedServerId, servers } = useServersContext();
+  const { selectedServerId, servers, statusById } = useServersContext();
+  const { isLive } = useTimeRange();
   const {
     snapshot,
     series,
@@ -30,20 +39,37 @@ export function RedisPage() {
     error,
     authConfigured,
     refresh,
-    setRedisPassword,
+    saveRedisConnection,
   } = useRedisDashboard();
   const [authOpen, setAuthOpen] = useState(false);
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
+  const [target, setTarget] = useState<RedisTargetConfig>({});
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
 
-  const serverName =
-    servers.find((s) => s.id === selectedServerId)?.name ?? "No server selected";
+  const server = servers.find((s) => s.id === selectedServerId);
+  const connection = selectedServerId ? statusById.get(selectedServerId)?.status : undefined;
+  const connected = connection === "connected" || connection === "degraded";
+  const waitingForLive = isLive && connected && !snapshot.collectedAtMs;
+
+  useEffect(() => {
+    setTimedOut(false);
+    if (!waitingForLive) return;
+    const timer = setTimeout(() => setTimedOut(true), DETECT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [waitingForLive, selectedServerId]);
 
   const handleSaveAuth = async () => {
     setSaving(true);
     try {
-      await setRedisPassword(password);
-      toast.success("Redis AUTH password saved to Credential Manager");
+      await saveRedisConnection({
+        password: password || undefined,
+        username: username || undefined,
+        target,
+      });
+      toast.success("Redis connection saved to Credential Manager");
       setAuthOpen(false);
       setPassword("");
     } catch (err) {
@@ -53,104 +79,282 @@ export function RedisPage() {
     }
   };
 
-  if (loading && !snapshot.collectedAtMs) {
+  if (!server) {
     return (
-      <div className="flex flex-col gap-4">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
-          ))}
-        </div>
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
+      <EmptyState
+        icon={Database}
+        title="No server selected"
+        description="Select a server in the sidebar to see Redis throughput, memory and slow queries."
+      />
     );
   }
 
-  return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Redis</h2>
-          <p className="text-sm text-muted-foreground">
-            {serverName}
-            {snapshot.info.redisVersion && (
-              <> · v{snapshot.info.redisVersion}</>
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={authConfigured ? "default" : "outline"}>
-            {authConfigured ? "AUTH configured" : "AUTH not set"}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAuthOpen(true)}
-            disabled={!selectedServerId}
-          >
-            <KeyRound className="size-4" />
-            Redis password
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => refresh()}>
-            <RefreshCw className="size-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+  if (isLive && !connected) {
+    return (
+      <EmptyState
+        icon={Database}
+        title={`${server.name} is not connected`}
+        description="Connect the server from the Overview page. Redis metrics are collected over the same SSH session."
+      />
+    );
+  }
 
-      {error && (
-        <div
-          className="rounded-lg border border-status-critical/40 bg-status-critical/10 px-4 py-3 text-sm text-status-critical"
-          role="alert"
+  const authDialog = (
+    <Dialog open={authOpen} onOpenChange={setAuthOpen}>
+      <DialogContent>
+        <form
+          className="contents"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSaveAuth();
+          }}
         >
-          {error}
-        </div>
-      )}
-
-      {!selectedServerId && (
-        <p className="text-sm text-muted-foreground">
-          Select a server in the sidebar to store Redis AUTH credentials. Metrics below use
-          parser demo data until live collection is wired.
-        </p>
-      )}
-
-      <RedisStatCards derived={snapshot.derived} />
-      <RedisCharts series={series} />
-      <div className="grid gap-4 xl:grid-cols-2">
-        <RedisKeyspaceTable keyspace={snapshot.keyspace} />
-        <RedisSlowlogTable entries={snapshot.slowlog} />
-      </div>
-
-      <Dialog open={authOpen} onOpenChange={setAuthOpen}>
-        <DialogContent>
           <DialogHeader>
             <DialogTitle>Redis AUTH password</DialogTitle>
             <DialogDescription>
-              Stored in Windows Credential Manager for the selected server (same pattern as SSH
-              secrets). Used when redis-cli runs over SSH.
+              Password and ACL username are stored in Windows Credential Manager for {server.name}.
+              Port, socket, and Docker container name are saved in the server config.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="redis-pass">Password</Label>
-            <Input
-              id="redis-pass"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="off"
-            />
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <Label htmlFor="redis-user">ACL username</Label>
+              <Input
+                id="redis-user"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="off"
+                placeholder="default"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="redis-pass">Password</Label>
+              <Input
+                id="redis-pass"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="redis-port">Port</Label>
+              <Input
+                id="redis-port"
+                inputMode="numeric"
+                value={target.port ?? ""}
+                onChange={(e) =>
+                  setTarget({ ...target, port: e.target.value ? Number(e.target.value) : null })
+                }
+                placeholder="6379"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="redis-sock">Unix socket</Label>
+              <Input
+                id="redis-sock"
+                value={target.socket ?? ""}
+                onChange={(e) => setTarget({ ...target, socket: e.target.value })}
+                placeholder="/var/run/redis/redis.sock"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="redis-docker">Docker container</Label>
+              <Input
+                id="redis-docker"
+                value={target.dockerContainer ?? ""}
+                onChange={(e) => setTarget({ ...target, dockerContainer: e.target.value })}
+                placeholder="redis"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAuthOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={testing || !selectedServerId}
+              onClick={() => {
+                if (!selectedServerId) return;
+                setTesting(true);
+                void testRedisConnection(selectedServerId, target)
+                  .then((message) => toast.success(message))
+                  .catch((err) => toast.error("Redis connection failed", { description: String(err) }))
+                  .finally(() => setTesting(false));
+              }}
+            >
+              {testing ? "Testing…" : "Test connection"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAuthOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void handleSaveAuth()} disabled={saving || !password}>
+            <Button type="submit" disabled={saving}>
               Save
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const phase = snapshot.collectorState?.phase;
+  const phaseMessage = snapshot.collectorState?.message;
+  const instances = snapshot.instances ?? [];
+
+  const openAuth = () => {
+    if (selectedServerId) {
+      void getRedisTarget(selectedServerId).then(setTarget).catch(() => undefined);
+    }
+    setAuthOpen(true);
+  };
+
+  if ((phase === "not_installed" || (waitingForLive && timedOut && !phase)) && !snapshot.collectedAtMs) {
+    return (
+      <>
+        <EmptyState
+          icon={Database}
+          title={phase === "not_installed" ? "Redis is not installed" : "Redis did not respond"}
+          description={
+            phaseMessage ||
+            `No redis-cli or Redis container was found on ${server.name}. Set a port, socket, or Docker container if Redis is not on the default path.`
+          }
+          action={
+            <Button variant="outline" onClick={openAuth}>
+              <KeyRound data-icon="inline-start" />
+              Redis connection
+            </Button>
+          }
+        />
+        {authDialog}
+      </>
+    );
+  }
+
+  const header = (
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="min-w-0">
+        <h2 className="truncate text-lg font-semibold tracking-tight">{server.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          {snapshot.info.redisVersion ? `Redis ${snapshot.info.redisVersion}` : "Redis"}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">
+          <KeyRound aria-hidden />
+          {authConfigured ? "AUTH configured" : "AUTH not set"}
+        </Badge>
+        {instances.length > 1 && (
+          <label className="flex items-center gap-2 text-xs">
+            Instance
+            <SimpleSelect
+              id="redis-instance"
+              ariaLabel="Redis instance"
+              value={target.label ?? instances[0]?.label ?? ""}
+              onValueChange={(next) => {
+                const inst = instances.find((row) => row.label === next);
+                if (!inst || !selectedServerId) return;
+                const saved = {
+                  label: inst.label,
+                  port: inst.port,
+                  socket: inst.socket,
+                  dockerContainer: inst.dockerContainer,
+                };
+                setTarget(saved);
+                void saveRedisConnection({ target: saved });
+              }}
+              options={instances.map((inst) => ({ value: inst.label, label: inst.label }))}
+            />
+          </label>
+        )}
+        <Button variant="outline" size="sm" onClick={openAuth}>
+          <KeyRound data-icon="inline-start" />
+          Redis connection
+        </Button>
+        {!isLive && (
+          <Button variant="outline" size="sm" onClick={() => refresh()}>
+            <RefreshCw data-icon="inline-start" />
+            Refresh
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      {header}
+
+      {error && (
+        <Notice tone="critical" title="Could not load Redis metrics">
+          {error}
+        </Notice>
+      )}
+      {!isLive && (
+        <Notice tone="info">
+          Showing stored history for throughput, memory and hit rate. Keyspace and slow log
+          are only available in Live mode.
+        </Notice>
+      )}
+      {isLive && phase === "auth_required" && (
+        <Notice
+          tone="warning"
+          title="Redis needs a password"
+          action={
+            <Button type="button" size="sm" variant="outline" onClick={openAuth}>
+              Set password
+            </Button>
+          }
+        >
+          {phaseMessage || "Redis needs a password."}
+          <HowToFix text="redis authentication required" />
+        </Notice>
+      )}
+      {isLive && phase === "protected_mode" && (
+        <Notice tone="warning" title="Redis protected mode">
+          {phaseMessage || "Redis protected mode rejected the connection. It only accepts loopback clients until a password is set."}
+        </Notice>
+      )}
+      {isLive && phase === "connection_refused" && (
+        <Notice tone="critical" title="Redis connection refused">
+          {phaseMessage || "Nothing accepted the connection. Check the port, unix socket, or Docker container name."}
+        </Notice>
+      )}
+      {isLive && phase === "timed_out" && (
+        <Notice tone="warning" title="Redis timed out">
+          {phaseMessage || "The connection timed out. Tracelyn will retry."}
+        </Notice>
+      )}
+      {isLive && phase === "loading" && (
+        <Notice tone="info" title="Loading Redis">
+          Waiting for the first INFO response.
+        </Notice>
+      )}
+
+      {isLive && phase && phase !== "live" && phase !== "loading" ? null : loading && !snapshot.collectedAtMs && isLive ? (
+        <>
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 8 }, (_, i) => (
+              <Skeleton key={i} className="h-[104px] rounded-xl" />
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Skeleton className="h-[256px] rounded-xl" />
+            <Skeleton className="h-[256px] rounded-xl" />
+          </div>
+        </>
+      ) : (
+        <>
+          {isLive && <RedisStatCards derived={snapshot.derived} />}
+          <RedisCharts series={series} />
+          {isLive && (
+            <div className="grid gap-6 xl:grid-cols-2">
+              <RedisKeyspaceTable keyspace={snapshot.keyspace} />
+              <RedisSlowlogTable entries={snapshot.slowlog} />
+            </div>
+          )}
+        </>
+      )}
+
+      {authDialog}
     </div>
   );
 }

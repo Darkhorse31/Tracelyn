@@ -1,0 +1,1 @@
+{"connections":8,"queryCounter":4200,"counterEpoch":"2026-10-25 00:00:00+00","slowQueries":2,"cacheHitPercent":98.4,"replicationLagSeconds":null,"sizes":[{"database":"orders","bytes":8388608}]}

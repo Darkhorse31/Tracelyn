@@ -1,0 +1,3 @@
+LISTEN 0 128 127.0.0.1:3001 0.0.0.0:* users:(("node",pid=12345,fd=21))
+LISTEN 0 128 0.0.0.0:80 0.0.0.0:* users:(("nginx",pid=999,fd=6))
+LISTEN 0 128 127.0.0.1:6379 0.0.0.0:* users:(("redis-server",pid=888,fd=4))

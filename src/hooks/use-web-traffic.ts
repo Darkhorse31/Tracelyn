@@ -1,6 +1,7 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { listenThen } from "@/lib/events";
 import {
+  getWebTrafficSnapshot,
   subscribeWebTraffic,
   unsubscribeWebTraffic,
 } from "@/lib/api";
@@ -83,26 +84,26 @@ export function useWebTraffic(serverId: string | null): WebTrafficData & {
       };
     }
 
-    let unlisten: UnlistenFn | undefined;
     setLoading(true);
-
-    void (async () => {
-      await subscribeWebTraffic(serverId);
-      unlisten = await listen<WebTrafficEvent>(
-        `web-traffic:${serverId}`,
-        (event) => {
-          const payload = event.payload;
-          setMetrics(payload.metrics);
-          setLogs(payload.logs);
-          setPermissionDenied(payload.permissionDenied);
-          setWebDetected(payload.webDetected);
-          setLoading(false);
-        },
-      );
-    })();
+    const apply = (payload: WebTrafficEvent) => {
+      setMetrics(payload.metrics);
+      setLogs(payload.logs);
+      setPermissionDenied(payload.permissionDenied);
+      setWebDetected(payload.webDetected);
+      setLoading(false);
+    };
+    const stop = listenThen<WebTrafficEvent>(
+      `web-traffic:${serverId}`,
+      apply,
+      async () => {
+        const cached = await getWebTrafficSnapshot(serverId);
+        if (cached) apply(cached);
+        await subscribeWebTraffic(serverId);
+      },
+    );
 
     return () => {
-      void unlisten?.();
+      stop();
       void unsubscribeWebTraffic(serverId);
     };
   }, [serverId, isLive, range.startMs, range.endMs]);

@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ServerCard } from "@/components/servers/server-card";
+import { InfraSummaryCard } from "@/components/infra/summary-card";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useServersContext } from "@/contexts/servers-context";
 import { useOverviewMetrics } from "@/hooks/use-overview-metrics";
@@ -61,7 +64,7 @@ function sortServers(
 }
 
 export function OverviewPage() {
-  const { servers, statusById, loading, connect, disconnect } =
+  const { servers, statusById, loading, connect, disconnect, selectedServerId } =
     useServersContext();
   const metricsById = useOverviewMetrics(true);
   const [addOpen, setAddOpen] = useState(false);
@@ -112,6 +115,14 @@ export function OverviewPage() {
           <Plus data-icon="inline-start" />
           Add server
         </Button>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link to="/how-it-works" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            How Tracelyn works
+          </Link>
+          <Link to="/setup" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+            Setup guide
+          </Link>
+        </div>
         <ServerFormDialog open={addOpen} onOpenChange={setAddOpen} />
       </div>
     );
@@ -142,6 +153,7 @@ export function OverviewPage() {
           />
         ))}
       </div>
+      {selectedServerId && <InfraSummaryCard serverId={selectedServerId} />}
       <ServerFormDialog open={addOpen} onOpenChange={setAddOpen} />
     </div>
   );

@@ -1,0 +1,4 @@
+Topic: orders TopicId: Jzz PartitionCount: 2 ReplicationFactor: 1 Configs:
+GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID
+workers orders 0 80 100 20 consumer-abc /127.0.0.1 consumer-1
+workers orders 1 - 20 - - - -

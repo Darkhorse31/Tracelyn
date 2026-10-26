@@ -29,13 +29,16 @@ impl RedisInfo {
         self.fields.get(key).and_then(|v| v.parse().ok())
     }
 
-    pub fn get_f64(&self, key: &str) -> Option<f64> {
-        self.fields.get(key).and_then(|v| v.parse().ok())
-    }
-
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.fields.get(key).map(|s| s.as_str())
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisCollectorState {
+    pub phase: String,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,6 +49,8 @@ pub struct RedisSnapshot {
     pub keyspace: Vec<RedisDbKeyspace>,
     pub slowlog: Vec<RedisSlowlogEntry>,
     pub derived: DerivedRedisMetricsPayload,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collector_state: Option<RedisCollectorState>,
 }
 
 /// Flattened INFO fields needed by the UI (subset of full INFO).

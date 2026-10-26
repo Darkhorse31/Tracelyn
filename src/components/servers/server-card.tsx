@@ -1,6 +1,7 @@
 import { Loader2, Plug, PlugZap, Server } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Sparkline } from "@/components/charts/sparkline";
+import type { ChartColor } from "@/lib/chart-theme";
 import { ConnectionStatusBadge } from "@/components/status/connection-status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,18 +30,15 @@ interface ServerCardProps {
   busy?: boolean;
 }
 
-function borderAccent(status: ConnectionStatus | undefined) {
+/** Unhealthy servers get a colored ring; the badge carries the text and icon. */
+function ringAccent(status: ConnectionStatus | undefined) {
   switch (status) {
-    case "connected":
-      return "border-status-ok/40";
     case "degraded":
-      return "border-status-warning/50";
+      return "ring-2 ring-status-warning/70";
     case "offline":
-      return "border-status-critical/50";
-    case "connecting":
-      return "border-status-info/40";
+      return "ring-2 ring-status-critical/70";
     default:
-      return "border-border";
+      return "";
   }
 }
 
@@ -54,14 +52,14 @@ function MetricCell({
   label: string;
   value: string;
   spark: number[];
-  color: string;
+  color: ChartColor;
   max?: number;
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg bg-muted/40 px-2 py-2">
-      <div className="flex items-baseline justify-between gap-1">
+    <div className="flex flex-col gap-2 rounded-lg bg-muted/50 p-2">
+      <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="font-mono text-xs font-medium font-tabular">{value}</span>
+        <span className="font-mono text-sm font-medium">{value}</span>
       </div>
       <Sparkline values={spark} color={color} max={max} />
     </div>
@@ -82,18 +80,18 @@ export function ServerCard({
 
   return (
     <Card
+      role="group"
+      aria-label={server.name}
       className={cn(
-        "flex flex-col transition-[border-color,box-shadow] duration-200",
-        borderAccent(connectionStatus),
-        connectionStatus === "offline" &&
-          "shadow-[inset_0_0_0_1px_var(--status-critical)]/10",
+        "flex flex-col transition-shadow duration-200",
+        ringAccent(connectionStatus),
       )}
     >
-      <CardHeader className="gap-2 pb-2">
+      <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Server />
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Server className="size-4" aria-hidden />
             </div>
             <div className="min-w-0">
               <CardTitle className="truncate text-base">{server.name}</CardTitle>
@@ -105,39 +103,40 @@ export function ServerCard({
           <ConnectionStatusBadge status={connectionStatus} />
         </div>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-3 pb-2">
+      <CardContent className="flex flex-1 flex-col gap-4">
         {showMetrics ? (
           <div className="grid grid-cols-2 gap-2">
             <MetricCell
               label="CPU"
               value={`${metrics.cpuPercent.toFixed(1)}%`}
               spark={metrics.cpuSparkline}
-              color="var(--chart-1)"
+              color="blue"
             />
             <MetricCell
               label="Memory"
               value={`${metrics.memoryPercent.toFixed(1)}%`}
               spark={metrics.memorySparkline}
-              color="var(--chart-2)"
+              color="green"
             />
             <MetricCell
               label="Disk"
               value={`${metrics.diskPercent.toFixed(1)}%`}
               spark={metrics.diskSparkline}
-              color="var(--chart-4)"
+              color="purple"
             />
             <MetricCell
               label="Load"
               value={metrics.load1.toFixed(2)}
               spark={metrics.loadSparkline}
               max={Math.max(4, metrics.load1 * 1.5, 1)}
-              color="var(--chart-3)"
+              color="orange"
             />
           </div>
-        ) : busy && connectionStatus === "connecting" ? (
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-16 w-full" />
+        ) : connectionStatus === "connecting" || (isConnected && !metrics) ? (
+          <div className="grid grid-cols-2 gap-2" aria-busy="true" aria-label="Loading metrics">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-[76px] rounded-lg" />
+            ))}
           </div>
         ) : status?.osInfo ? (
           <p className="line-clamp-2 font-mono text-xs text-muted-foreground">
@@ -151,7 +150,7 @@ export function ServerCard({
           </p>
         )}
         {status?.hostname && !showMetrics && (
-          <p className="font-mono text-xs text-muted-foreground font-tabular">
+          <p className="font-mono text-xs text-muted-foreground">
             Hostname: {status.hostname}
           </p>
         )}
@@ -168,7 +167,7 @@ export function ServerCard({
           </div>
         )}
       </CardContent>
-      <CardFooter className="gap-2 pt-2">
+      <CardFooter className="gap-2">
         {isConnected ? (
           <>
             <Button variant="outline" onClick={onDisconnect} disabled={busy}>

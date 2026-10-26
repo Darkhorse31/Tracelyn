@@ -7,7 +7,7 @@ pub fn parse_ps_top(output: &str, limit: usize) -> Vec<ProcessRow> {
         if line.is_empty() {
             continue;
         }
-        let mut parts: Vec<&str> = line.split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 5 {
             continue;
         }

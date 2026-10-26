@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SimpleSelect,
 } from "@/components/ui/select";
+import { inspectSshPrivateKey, listSshPrivateKeys } from "@/lib/api";
 import type { AuthType, ServerRecord } from "@/lib/types";
 import { useServersContext } from "@/contexts/servers-context";
 
@@ -54,6 +57,9 @@ export function ServerFormDialog({
   const [keyPassphrase, setKeyPassphrase] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [sshDir, setSshDir] = useState("");
+  const [detectedKeys, setDetectedKeys] = useState<string[]>([]);
+  const [keyMessage, setKeyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -76,7 +82,49 @@ export function ServerFormDialog({
     }
     setPassword("");
     setKeyPassphrase("");
+    setKeyMessage(null);
   }, [open, server]);
+
+  useEffect(() => {
+    if (!open || authType !== "key") return;
+    void listSshPrivateKeys()
+      .then((list) => {
+        setSshDir(list.directory);
+        setDetectedKeys(list.keys);
+      })
+      .catch(() => {
+        setDetectedKeys([]);
+      });
+  }, [open, authType]);
+
+  const checkKey = async (path: string) => {
+    const trimmed = path.trim();
+    if (!trimmed) {
+      setKeyMessage(null);
+      return true;
+    }
+    try {
+      const result = await inspectSshPrivateKey(trimmed);
+      setKeyMessage(result.ok ? null : result.message);
+      return result.ok;
+    } catch (err) {
+      setKeyMessage(String(err));
+      return false;
+    }
+  };
+
+  const browseKey = async () => {
+    const picked = await openFile({
+      title: "Private key",
+      directory: false,
+      multiple: false,
+      defaultPath: sshDir || undefined,
+    });
+    if (typeof picked === "string" && picked) {
+      setKeyPath(picked);
+      await checkKey(picked);
+    }
+  };
 
   const buildInput = () => ({
     serverId: server?.id,
@@ -91,13 +139,17 @@ export function ServerFormDialog({
     keyPassphrase: authType === "key" ? keyPassphrase : undefined,
   });
 
-  const validate = () => {
+  const validate = async () => {
     if (!name.trim() || !host.trim() || !username.trim()) {
       toast.error("Name, host, and username are required.");
       return false;
     }
     if (authType === "key" && !keyPath.trim()) {
       toast.error("SSH key path is required for key authentication.");
+      return false;
+    }
+    if (authType === "key" && !(await checkKey(keyPath))) {
+      toast.error("Choose an OpenSSH private key.");
       return false;
     }
     if (authType === "password" && !password && !server) {
@@ -108,7 +160,7 @@ export function ServerFormDialog({
   };
 
   const handleTest = async () => {
-    if (!validate()) return;
+    if (!(await validate())) return;
     setTesting(true);
     try {
       const result = await testConnection(buildInput());
@@ -125,7 +177,7 @@ export function ServerFormDialog({
   };
 
   const handleSave = async () => {
-    if (!validate()) return;
+    if (!(await validate())) return;
     setSaving(true);
     try {
       const payload = buildInput();
@@ -152,7 +204,7 @@ export function ServerFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{server ? "Edit server" : "Add server"}</DialogTitle>
           <DialogDescription>
@@ -203,12 +255,12 @@ export function ServerFormDialog({
               />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">
-              <Label>Authentication</Label>
+              <Label id="server-auth-label">Authentication</Label>
               <Select
                 value={authType}
                 onValueChange={(v) => setAuthType(v as AuthType)}
               >
-                <SelectTrigger>
+                <SelectTrigger aria-labelledby="server-auth-label" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -221,13 +273,42 @@ export function ServerFormDialog({
               <>
                 <div className="flex flex-col gap-2 sm:col-span-2">
                   <Label htmlFor="server-key-path">Private key path</Label>
-                  <Input
-                    id="server-key-path"
-                    value={keyPath}
-                    onChange={(e) => setKeyPath(e.target.value)}
-                    placeholder="C:\Users\you\.ssh\id_ed25519"
-                    className="font-mono text-xs"
+                  <div className="flex gap-2">
+                    <Input
+                      id="server-key-path"
+                      value={keyPath}
+                      onChange={(e) => {
+                        setKeyPath(e.target.value);
+                        setKeyMessage(null);
+                      }}
+                      onBlur={() => void checkKey(keyPath)}
+                      placeholder="C:\Users\you\.ssh\id_ed25519"
+                      className="min-w-0 flex-1 font-mono text-xs"
+                      aria-invalid={keyMessage ? true : undefined}
+                      aria-describedby={keyMessage ? "server-key-error" : undefined}
+                    />
+                    <Button type="button" variant="outline" onClick={() => void browseKey()}>
+                      Browse…
+                    </Button>
+                  </div>
+                  <Label htmlFor="server-key-pick">Detected keys</Label>
+                  <SimpleSelect
+                    id="server-key-pick"
+                    value={detectedKeys.includes(keyPath) ? keyPath : ""}
+                    placeholder={
+                      detectedKeys.length ? `Keys in ${sshDir || ".ssh"}` : "No keys found in .ssh"
+                    }
+                    onValueChange={(next) => {
+                      setKeyPath(next);
+                      void checkKey(next);
+                    }}
+                    options={detectedKeys.map((file) => ({ value: file, label: file }))}
                   />
+                  {keyMessage && (
+                    <p id="server-key-error" role="alert" className="text-xs text-status-critical">
+                      {keyMessage}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2 sm:col-span-2">
                   <Label htmlFor="server-passphrase">Key passphrase (optional)</Label>

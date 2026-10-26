@@ -62,6 +62,7 @@ pub fn run_maintenance(store: &MetricStore, now_ms: i64) -> Result<(), StoreErro
     let grace_ms = store.retention().rollup_interval_secs as i64 * 1000 * 2;
     rollup_raw_to_minute(store, now_ms, grace_ms)?;
     prune_samples(store, now_ms)?;
+    crate::insight::prune(store.connection(), now_ms, store.retention().raw_retention_ms())?;
     Ok(())
 }
 

@@ -1,4 +1,6 @@
+use crate::webserver::RouteRule;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -40,6 +42,21 @@ pub struct ServerRecord {
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub servers: Vec<ServerRecord>,
+    /// Manual APM route-normalization rules keyed by server id.
+    #[serde(default)]
+    pub route_rules: HashMap<String, Vec<RouteRule>>,
+    /// Optional Redis endpoint override (port, socket, or docker container).
+    #[serde(default)]
+    pub redis_targets: HashMap<String, RedisTargetConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisTargetConfig {
+    pub port: Option<u16>,
+    pub socket: Option<String>,
+    pub docker_container: Option<String>,
+    pub label: Option<String>,
 }
 
 pub struct ConfigStore {
@@ -120,7 +137,63 @@ impl ConfigStore {
             .iter()
             .position(|s| s.id == id)
             .ok_or_else(|| ConfigError::NotFound(id.to_string()))?;
+        self.config.route_rules.remove(id);
+        self.config.redis_targets.remove(id);
         Ok(self.config.servers.remove(pos))
+    }
+
+    pub fn route_rules(&self, server_id: &str) -> Vec<RouteRule> {
+        self.config
+            .route_rules
+            .get(server_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn set_route_rules(
+        &mut self,
+        server_id: &str,
+        rules: Vec<RouteRule>,
+    ) -> Result<(), ConfigError> {
+        self.get_server(server_id)?;
+        if rules.is_empty() {
+            self.config.route_rules.remove(server_id);
+        } else {
+            self.config.route_rules.insert(server_id.to_string(), rules);
+        }
+        Ok(())
+    }
+
+    pub fn redis_target(&self, server_id: &str) -> RedisTargetConfig {
+        self.config
+            .redis_targets
+            .get(server_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn set_redis_target(
+        &mut self,
+        server_id: &str,
+        target: RedisTargetConfig,
+    ) -> Result<(), ConfigError> {
+        self.get_server(server_id)?;
+        let empty = target.port.is_none()
+            && target.socket.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+            && target
+                .docker_container
+                .as_ref()
+                .map(|s| s.is_empty())
+                .unwrap_or(true)
+            && target.label.as_ref().map(|s| s.is_empty()).unwrap_or(true);
+        if empty {
+            self.config.redis_targets.remove(server_id);
+        } else {
+            self.config
+                .redis_targets
+                .insert(server_id.to_string(), target);
+        }
+        Ok(())
     }
 }
 

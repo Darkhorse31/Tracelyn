@@ -1,0 +1,4 @@
+# pxname,svname,status,weight,scur,stot,eresp,rate
+api,"one, blue",UP,10,2,100,2,5
+api,two,DOWN,0,0,0,0,0
+api,BACKEND,UP,10,2,100,2,5

@@ -1,42 +1,67 @@
+import { type ReactNode, useMemo } from "react";
+import {
+  type ChartBand,
+  type ChartSeries,
+  UPlotChart,
+} from "@/components/charts/uplot-chart";
+import { CHART_DASHES } from "@/lib/chart-theme";
+
 interface LatencyBandChartProps {
+  title: string;
+  /** `t` in Unix ms. */
   points: { t: number; p50: number; p95: number; p99: number }[];
   height?: number;
+  className?: string;
+  action?: ReactNode;
 }
 
-export function LatencyBandChart({ points, height = 160 }: LatencyBandChartProps) {
-  if (points.length < 2) return null;
-  const w = 400;
-  const max = Math.max(...points.flatMap((p) => [p.p99])) * 1.1;
-  const x = (i: number) => (i / (points.length - 1)) * w;
-  const y = (v: number) => height - (v / max) * (height - 8) - 4;
+const BANDS: ChartBand[] = [
+  { upper: 1, lower: 0, color: "vermillion" },
+  { upper: 2, lower: 1, color: "purple" },
+];
 
-  const p50 = points.map((p, i) => `${x(i)},${y(p.p50)}`).join(" ");
-  const p95 = points.map((p, i) => `${x(i)},${y(p.p95)}`).join(" ");
-  const band95 = `${p50} ${points
-    .map((p, i) => `${x(i)},${y(p.p95)}`)
-    .reverse()
-    .join(" ")}`;
-  const band99 = `${p95} ${points
-    .map((p, i) => `${x(i)},${y(p.p99)}`)
-    .reverse()
-    .join(" ")}`;
+export const formatMs = (v: number) =>
+  v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${v.toFixed(0)} ms`;
+
+export function LatencyBandChart({
+  title,
+  points,
+  height = 200,
+  className,
+  action,
+}: LatencyBandChartProps) {
+  const timestamps = useMemo(() => points.map((p) => p.t / 1000), [points]);
+  const series = useMemo(
+    (): ChartSeries[] => [
+      { label: "p50", color: "blue", fill: false, values: points.map((p) => p.p50) },
+      {
+        label: "p95",
+        color: "vermillion",
+        fill: false,
+        dash: CHART_DASHES[1],
+        values: points.map((p) => p.p95),
+      },
+      {
+        label: "p99",
+        color: "purple",
+        fill: false,
+        dash: CHART_DASHES[2],
+        values: points.map((p) => p.p99),
+      },
+    ],
+    [points],
+  );
 
   return (
-    <svg
-      viewBox={`0 0 ${w} ${height}`}
-      className="w-full"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="Latency percentile bands"
-    >
-      <polygon points={band99} fill="var(--color-primary)" fillOpacity="0.12" />
-      <polygon points={band95} fill="var(--color-primary)" fillOpacity="0.22" />
-      <polyline
-        points={p50}
-        fill="none"
-        stroke="var(--color-primary)"
-        strokeWidth="1.5"
-      />
-    </svg>
+    <UPlotChart
+      title={title}
+      timestamps={timestamps}
+      series={series}
+      bands={BANDS}
+      formatValue={formatMs}
+      height={height}
+      className={className}
+      action={action}
+    />
   );
 }

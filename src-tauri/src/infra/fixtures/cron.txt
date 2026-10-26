@@ -1,0 +1,9 @@
+__TZ__	UTC
+__CRON__	deploy	user crontab	user
+MAILTO=""
+*/5 * * * * /usr/bin/php /srv/worker.php
+__CRON__	root	/etc/cron.d/backup	system
+0 2 * * * root /usr/local/bin/backup
+@reboot root /usr/local/bin/warmup
+__JOURNAL__
+2026-10-26T00:05:00+00:00 host CRON[42]: (deploy) CMD (/usr/bin/php /srv/worker.php)

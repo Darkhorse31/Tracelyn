@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -7,6 +6,7 @@ pub enum LogFormatKind {
     Common,
     Combined,
     Custom,
+    ApacheTiming,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +48,7 @@ pub fn parse_access_line(line: &str, format: LogFormatKind) -> Result<AccessLogE
         LogFormatKind::Combined => parse_combined(trimmed),
         LogFormatKind::Common => parse_common(trimmed),
         LogFormatKind::Custom => parse_nginx_extended(trimmed),
+        LogFormatKind::ApacheTiming => parse_apache_timing_line(trimmed),
     }
 }
 
@@ -220,12 +221,4 @@ fn take_quoted(s: &str) -> Option<(Option<String>, &str)> {
 
 fn skip_sep(s: &str) -> &str {
     s.trim_start()
-}
-
-/// Wall-clock bucket for rate aggregation (seconds since UNIX epoch).
-pub fn entry_timestamp(_entry: &AccessLogEntry) -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }

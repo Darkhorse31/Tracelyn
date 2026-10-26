@@ -6,6 +6,8 @@ use std::collections::{HashMap, VecDeque};
 
 const TOP_N: usize = 10;
 const LOG_BUFFER_CAP: usize = 2000;
+/// One-minute heatmap buckets kept per route; older buckets are dropped.
+pub const HEATMAP_MINUTES: u64 = 30;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -111,6 +113,10 @@ impl TrafficAggregator {
         }
     }
 
+    pub fn route_normalizer_mut(&mut self) -> &mut RouteNormalizer {
+        &mut self.route_normalizer
+    }
+
     pub fn ingest(&mut self, entry: &AccessLogEntry, timestamp_secs: u64) {
         self.roll_window(timestamp_secs);
         self.requests_in_window += 1;
@@ -137,6 +143,10 @@ impl TrafficAggregator {
         if let Some(secs) = entry.request_time_secs {
             ep.latency.observe(secs);
             let bucket = timestamp_secs / 60;
+            if !self.heatmap.contains_key(&(route.clone(), bucket)) {
+                self.heatmap
+                    .retain(|(_, b), _| *b + HEATMAP_MINUTES > bucket);
+            }
             self.heatmap
                 .entry((route.clone(), bucket))
                 .or_insert_with(StreamingQuantiles::new)

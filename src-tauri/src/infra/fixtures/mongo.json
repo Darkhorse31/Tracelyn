@@ -1,0 +1,1 @@
+{"status":{"connections":{"current":12},"opcounters":{"insert":100,"query":40,"update":10},"uptime":500,"wiredTiger":{"cache":{"pages read into cache":10,"pages requested from the cache":100}}},"sizes":[{"database":"orders","bytes":1048576}],"slowQueries":3,"replication":{"members":[{"self":false,"optimeDateMs":1700000005000},{"self":true,"optimeDateMs":1700000002000}]}}

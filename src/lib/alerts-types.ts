@@ -40,6 +40,17 @@ export interface AlertEventRecord {
   resolvedAtMs?: number | null;
 }
 
+/** Payload of the `alert-transition` event emitted when a rule fires or clears. */
+export interface AlertTransition {
+  ruleId: string;
+  ruleName: string;
+  serverId: string;
+  fired: boolean;
+  message: string;
+  value: number;
+  threshold: number;
+}
+
 export interface RetentionConfig {
   rawRetentionDays: number;
   rollupRetentionDays: number;

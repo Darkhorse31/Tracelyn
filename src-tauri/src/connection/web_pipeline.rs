@@ -6,11 +6,11 @@ use crate::ssh::{run_command, start_tail_follow, SshSession};
 use crate::webserver::{
     detect_and_parse_config, parse_access_line, suggest_apache_timing_line,
     suggest_nginx_timing_line, LogFormatKind, ParsedWebConfig, RouteNormalizer, RouteRule,
-    TrafficAggregator,
+    TrafficAggregator, HEATMAP_MINUTES,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
 
 const SERIES_LEN: usize = 60;
 
@@ -21,27 +21,47 @@ pub struct WebPipeline {
     permission_denied: bool,
     web_detected: bool,
     req_series: VecDeque<MetricPointPayload>,
-    log_rx: Option<UnboundedReceiver<Result<String, String>>>,
+    log_rxs: Vec<LogTail>,
+    access_log_paths: Vec<String>,
+    unreadable_logs: Vec<String>,
+    path_stats: HashMap<String, PathStat>,
+    recent_access: Vec<(String, String)>,
+}
+
+struct LogTail {
+    path: String,
+    rx: Receiver<Result<String, String>>,
+}
+
+struct PathStat {
+    window_reqs: u64,
+    window_err: u64,
+    latencies_ms: Vec<f64>,
+    req_per_sec: f64,
+    error_rate: f64,
+    p95_ms: Option<f64>,
 }
 
 impl WebPipeline {
-    pub async fn setup(session: &SshSession) -> Self {
+    pub async fn setup(session: &SshSession, route_rules: Vec<RouteRule>) -> Self {
         let runner = crate::connection::ssh_runner::SessionRunner::new(session);
         let detected = detect_and_parse_config(&runner).await.ok().flatten();
         let mut permission_denied = false;
         let mut web_detected = false;
         let mut log_format = LogFormatKind::Combined;
         let mut timing_notice = None;
-        let mut log_rx = None;
+        let mut log_rxs = Vec::new();
+        let mut access_log_paths = Vec::new();
+        let mut unreadable_logs = Vec::new();
 
         if let Some(detected) = detected {
             web_detected = true;
-            let (access_path, notice) = match &detected.config {
+            let (paths, notice) = match &detected.config {
                 Some(ParsedWebConfig::Nginx(info)) => {
                     if !info.request_timing.present {
                         timing_notice = Some(TimingNoticePayload {
                             message:
-                                "Response time is not in the access log. Add a timed log_format and point access_log at it:"
+                                "Response time is not in the Nginx access log. Add a log_format with $request_time and $upstream_response_time. Then run nginx -t and reload Nginx."
                                     .into(),
                             suggested_line: info
                                 .request_timing
@@ -54,17 +74,18 @@ impl WebPipeline {
                                 }),
                         });
                     }
-                    log_format = LogFormatKind::Custom;
-                    (
-                        info.access_log_paths.first().cloned(),
-                        timing_notice.clone(),
-                    )
+                    log_format = if info.request_timing.present {
+                        LogFormatKind::Custom
+                    } else {
+                        LogFormatKind::Combined
+                    };
+                    (dedupe_paths(&info.access_log_paths), timing_notice.clone())
                 }
                 Some(ParsedWebConfig::Apache(info)) => {
                     if !info.request_timing.present {
                         timing_notice = Some(TimingNoticePayload {
                             message:
-                                "Response time is not in the access log. Add %D (microseconds) to LogFormat:"
+                                "Response time is not in the Apache access log. Add a LogFormat named combined_timing with %D. Then run apache2ctl configtest and reload Apache."
                                     .into(),
                             suggested_line: info
                                 .request_timing
@@ -73,14 +94,20 @@ impl WebPipeline {
                                 .unwrap_or_else(suggest_apache_timing_line),
                         });
                     }
-                    log_format = LogFormatKind::Combined;
-                    (info.access_log_paths.first().cloned(), timing_notice.clone())
+                    log_format = if info.request_timing.present {
+                        LogFormatKind::ApacheTiming
+                    } else {
+                        LogFormatKind::Combined
+                    };
+                    (dedupe_paths(&info.access_log_paths), timing_notice.clone())
                 }
-                None => (None, None),
+                None => (vec![], None),
             };
             timing_notice = notice;
+            access_log_paths = paths.clone();
 
-            if let Some(path) = access_path {
+            let max_tails = 24usize;
+            for path in paths.into_iter().take(max_tails) {
                 let readable = run_command(
                     session,
                     &format!("test -r '{}' && echo ok", path.replace('\'', "'\\''")),
@@ -89,14 +116,17 @@ impl WebPipeline {
                 .map(|s| s.trim() == "ok")
                 .unwrap_or(false);
                 if readable {
-                    log_rx = start_tail_follow(session, &path).await.ok();
+                    if let Ok(rx) = start_tail_follow(session, &path).await {
+                        log_rxs.push(LogTail { path, rx });
+                    }
                 } else {
                     permission_denied = true;
+                    unreadable_logs.push(path);
                 }
             }
         }
 
-        let normalizer = RouteNormalizer::new(Vec::<RouteRule>::new());
+        let normalizer = RouteNormalizer::new(route_rules);
         Self {
             aggregator: TrafficAggregator::new(60, normalizer),
             log_format,
@@ -104,33 +134,112 @@ impl WebPipeline {
             permission_denied,
             web_detected,
             req_series: VecDeque::new(),
-            log_rx,
+            log_rxs,
+            access_log_paths,
+            unreadable_logs,
+            path_stats: HashMap::new(),
+            recent_access: Vec::new(),
         }
     }
 
-    pub fn ingest_line(&mut self, line: &str) {
+    pub fn unreadable_logs(&self) -> &[String] {
+        &self.unreadable_logs
+    }
+
+    pub fn take_recent_access(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.recent_access)
+    }
+
+    /// Per access-log path: req/s, error rate (0-1), p95 ms. Rolled on each call.
+    pub fn path_metrics(&mut self) -> HashMap<String, (f64, f64, Option<f64>)> {
+        let mut out = HashMap::new();
+        for (path, stat) in &mut self.path_stats {
+            stat.req_per_sec = stat.window_reqs as f64;
+            stat.error_rate = if stat.window_reqs == 0 {
+                0.0
+            } else {
+                stat.window_err as f64 / stat.window_reqs as f64
+            };
+            stat.p95_ms = percentile95(&stat.latencies_ms);
+            stat.window_reqs = 0;
+            stat.window_err = 0;
+            stat.latencies_ms.clear();
+            out.insert(path.clone(), (stat.req_per_sec, stat.error_rate, stat.p95_ms));
+        }
+        out
+    }
+
+    pub fn access_log_paths(&self) -> &[String] {
+        &self.access_log_paths
+    }
+
+    pub fn logs_readable(&self) -> bool {
+        !self.log_rxs.is_empty()
+    }
+
+    pub fn web_detected(&self) -> bool {
+        self.web_detected
+    }
+
+    /// Applies to lines ingested from now on; existing endpoint stats keep their routes.
+    pub fn set_route_rules(&mut self, rules: Vec<RouteRule>) {
+        let normalizer = self.aggregator.route_normalizer_mut();
+        if normalizer.rules() != rules.as_slice() {
+            normalizer.set_rules(rules);
+        }
+    }
+
+    fn ingest_from(&mut self, line: &str, path: Option<&str>) {
         if let Ok(entry) = parse_access_line(line, self.log_format) {
             let ts = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
+            if let Some(path) = path {
+                let stat = self.path_stats.entry(path.to_string()).or_insert_with(|| PathStat {
+                    window_reqs: 0,
+                    window_err: 0,
+                    latencies_ms: Vec::new(),
+                    req_per_sec: 0.0,
+                    error_rate: 0.0,
+                    p95_ms: None,
+                });
+                stat.window_reqs += 1;
+                if entry.status >= 500 {
+                    stat.window_err += 1;
+                }
+                if let Some(secs) = entry.request_time_secs {
+                    if stat.latencies_ms.len() < 128 {
+                        stat.latencies_ms.push(secs * 1000.0);
+                    }
+                }
+            }
             self.aggregator.ingest(&entry, ts);
         }
     }
 
     pub fn drain_log_lines(&mut self) {
+        self.recent_access.clear();
         let mut batch = Vec::new();
-        if let Some(rx) = &mut self.log_rx {
-            while let Ok(line) = rx.try_recv() {
-                batch.push(line);
+        for tail in &mut self.log_rxs {
+            while let Ok(line) = tail.rx.try_recv() {
+                batch.push((tail.path.clone(), line));
             }
         }
-        for line in batch {
+        for (path, line) in batch {
             match line {
-                Ok(l) => self.ingest_line(&l),
+                Ok(l) => {
+                    if self.recent_access.len() < 2000 {
+                        self.recent_access.push((path.clone(), l.clone()));
+                    }
+                    self.ingest_from(&l, Some(&path));
+                }
                 Err(msg) => {
                     if msg.to_lowercase().contains("permission denied") {
                         self.permission_denied = true;
+                        if !self.unreadable_logs.contains(&path) {
+                            self.unreadable_logs.push(path);
+                        }
                     }
                 }
             }
@@ -227,14 +336,19 @@ impl WebPipeline {
             })
             .collect();
 
+        // Index 0 is the oldest minute in the window, HEATMAP_MINUTES - 1 the current one.
+        let now_min = now_ms / 60_000;
         let heatmap: Vec<ApmHeatmapCell> = ep
             .heatmap
             .iter()
-            .map(|c| ApmHeatmapCell {
-                route: c.route.clone(),
-                bucket_index: (c.bucket_secs / 60) as u32,
-                p50_ms: c.p50_ms,
-                p95_ms: c.p95_ms,
+            .filter_map(|c| {
+                let age = now_min.checked_sub(c.bucket_secs / 60)?;
+                (age < HEATMAP_MINUTES).then(|| ApmHeatmapCell {
+                    route: c.route.clone(),
+                    bucket_index: (HEATMAP_MINUTES - 1 - age) as u32,
+                    p50_ms: c.p50_ms,
+                    p95_ms: c.p95_ms,
+                })
             })
             .collect();
 
@@ -287,9 +401,27 @@ fn status_family_counts(status_counts: &HashMap<u16, u64>) -> HashMap<String, u6
     out
 }
 
-pub async fn redis_detected(session: &SshSession) -> bool {
-    run_command(session, "ps aux 2>/dev/null || ps -ef")
-        .await
-        .map(|s| s.contains("redis-server"))
-        .unwrap_or(false)
+fn percentile95(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut v = values.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = ((v.len() as f64) * 0.95).ceil() as usize;
+    Some(v[idx.saturating_sub(1).min(v.len() - 1)])
 }
+
+fn dedupe_paths(paths: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for p in paths {
+        if p == "off" || p.is_empty() {
+            continue;
+        }
+        if seen.insert(p.clone()) {
+            out.push(p.clone());
+        }
+    }
+    out
+}
+
