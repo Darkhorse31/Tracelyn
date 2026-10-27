@@ -1,4 +1,5 @@
 pub mod apps;
+pub mod fleet;
 pub mod diagnostics;
 pub mod setup;
 pub mod ops;
@@ -126,6 +127,46 @@ pub async fn delete_server(
     );
     let _ = app.emit("server-statuses", &state.all_statuses());
     Ok(())
+}
+
+#[tauri::command]
+pub async fn trust_host_key(
+    state: State<'_, AppState>,
+    host: String,
+    port: u16,
+    fingerprint: String,
+) -> Result<(), String> {
+    let host = host.trim().to_string();
+    if host.is_empty() || host.len() > 253 || port == 0 {
+        return Err("Host and port are required".into());
+    }
+    let mut store = state.host_keys.lock().await;
+    store.trust(&host, port, &fingerprint).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn read_crash_log() -> String {
+    crate::crash::read_crash_log()
+}
+
+#[tauri::command]
+pub fn crash_log_path() -> String {
+    crate::crash::crash_log_path().display().to_string()
+}
+
+#[tauri::command]
+pub fn open_crash_log(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = crate::crash::crash_log_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(map_err)?;
+    }
+    if !path.exists() {
+        std::fs::write(&path, "").map_err(map_err)?;
+    }
+    app.opener()
+        .open_path(path.to_string_lossy().to_string(), None::<&str>)
+        .map_err(map_err)
 }
 
 #[tauri::command]

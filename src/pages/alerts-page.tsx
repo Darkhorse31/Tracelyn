@@ -9,6 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AlertTemplates } from "@/components/intel/alert-templates";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
 import { AlertQuickActions } from "@/components/ops/quick-actions";
 import { Notice } from "@/components/status/notice";
@@ -161,6 +162,8 @@ export function AlertsPage() {
     selectedServerId ?? undefined,
   );
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyState, setHistoryState] = useState<"all" | "active" | "resolved">("all");
   const [pendingDelete, setPendingDelete] = useState<AlertRule | null>(null);
   const [deleting, setDeleting] = useState(false);
   const serverName = (id: string) => servers.find((s) => s.id === id)?.name ?? "Unknown server";
@@ -182,6 +185,7 @@ export function AlertsPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
+      <AlertTemplates />
       {error && (
         <Notice tone="critical" title="Could not load alerts">
           {error}
@@ -277,7 +281,20 @@ export function AlertsPage() {
                 : "Recent events across all servers."}
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Input
+                aria-label="Filter history"
+                placeholder="Filter by rule or message"
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+              />
+              {(["all", "active", "resolved"] as const).map((state) => (
+                <Button key={state} type="button" size="sm" variant={historyState === state ? "default" : "outline"} onClick={() => setHistoryState(state)}>
+                  {state === "all" ? "All" : state === "active" ? "Active" : "Resolved"}
+                </Button>
+              ))}
+            </div>
             {loading ? (
               <Skeleton className="h-48 w-full" />
             ) : history.length === 0 ? (
@@ -285,7 +302,16 @@ export function AlertsPage() {
             ) : (
               <ScrollArea className="h-[min(420px,50vh)] pr-3">
                 <ul className="flex flex-col gap-2">
-                  {history.map((evt) => {
+                  {history
+                    .filter((evt) => {
+                      const active = !evt.resolvedAtMs;
+                      if (historyState === "active" && !active) return false;
+                      if (historyState === "resolved" && active) return false;
+                      const q = historyQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      return `${evt.ruleName} ${evt.message}`.toLowerCase().includes(q);
+                    })
+                    .map((evt) => {
                     const active = !evt.resolvedAtMs;
                     return (
                       <li key={evt.id} className="rounded-lg border border-border px-4 py-3">

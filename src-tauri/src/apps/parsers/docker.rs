@@ -9,6 +9,8 @@ struct DockerPsLine {
     names: String,
     #[serde(rename = "State")]
     state: String,
+    #[serde(rename = "Status", default)]
+    status_text: Option<String>,
     #[serde(rename = "Ports")]
     ports: Option<String>,
     #[serde(rename = "Labels", alias = "Label", default)]
@@ -37,13 +39,25 @@ fn docker_row_to_app(server_id: &str, row: DockerPsLine) -> TracelynApp {
         .unwrap_or(&row.names)
         .trim_start_matches('/')
         .to_string();
-    let status = if row.state.to_lowercase().contains("running") {
+    let blob = format!(
+        "{} {}",
+        row.state,
+        row.status_text.unwrap_or_default()
+    )
+    .to_lowercase();
+    let oom = blob.contains("oom");
+    let status = if blob.contains("running") && !oom {
         AppStatus::Online
+    } else if oom || blob.contains("exited") || blob.contains("dead") {
+        AppStatus::Errored
     } else {
         AppStatus::Stopped
     };
     let ports = parse_docker_ports(row.ports.as_deref().unwrap_or(""));
     let mut tags = vec!["docker".to_string()];
+    if oom {
+        tags.push("oom".into());
+    }
     if let Some(labels) = &row.label {
         for part in labels.split(',') {
             if let Some(proj) = part.trim().strip_prefix("com.docker.compose.project=") {

@@ -65,6 +65,8 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
             services: [],
             ssSummary: {},
             collectorError: null,
+            collectorName: null,
+            collectorFailures: 0,
           });
         } catch {
           if (!cancelled) setSnapshot(null);

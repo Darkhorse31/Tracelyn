@@ -43,6 +43,7 @@ export interface Check {
   url: string;
   intervalSeconds: number;
   enabled: boolean;
+  allowSelfSigned?: boolean;
 }
 export interface CheckResult {
   tsMs: number;

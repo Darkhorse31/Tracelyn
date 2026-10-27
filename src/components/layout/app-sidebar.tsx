@@ -24,6 +24,7 @@ import {
   LockKeyhole,
   CircleHelp,
   ListChecks,
+  Server,
 } from "lucide-react";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ import markDark from "@/assets/tracelyn-mark-dark.png";
 
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
+  { to: "/servers", label: "All servers", icon: Server },
   { to: "/server", label: "Server", icon: Activity },
   { to: "/apps", label: "Applications", icon: Boxes },
   { to: "/logs", label: "Logs", icon: ScrollText },
@@ -220,9 +222,9 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {servers.length === 0 ? (
-                  <p className="px-2 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  <li className="px-2 py-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
                     No servers yet. Add one to get started.
-                  </p>
+                  </li>
                 ) : (
                   servers.map((server) => {
                     const status = statusById.get(server.id)?.status;

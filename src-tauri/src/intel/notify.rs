@@ -39,7 +39,7 @@ pub fn has_channel_secret(channel_id: &str) -> bool {
 
 #[derive(Debug, Clone)]
 pub enum Job {
-    Windows { title: String, body: String },
+    Windows { title: String, body: String, path: String },
     Https { url: String, body: String },
     Email {
         host: String,
@@ -109,7 +109,7 @@ fn webhook_body(title: &str, text: &str) -> String {
     .to_string()
 }
 
-pub fn build_jobs(channels: &[Channel], title: &str, body: &str) -> (Vec<Job>, Vec<String>) {
+pub fn build_jobs(channels: &[Channel], title: &str, body: &str, path: &str) -> (Vec<Job>, Vec<String>) {
     let mut jobs = Vec::new();
     let mut errors = Vec::new();
     let text = format!("{title}\n{body}");
@@ -118,6 +118,7 @@ pub fn build_jobs(channels: &[Channel], title: &str, body: &str) -> (Vec<Job>, V
             "windows" => jobs.push(Job::Windows {
                 title: clip_chars(title, 120),
                 body: clip_chars(body, 400),
+                path: if path.starts_with('/') { path.to_string() } else { "/alerts".into() },
             }),
             "slack" | "discord" | "teams" | "webhook" => match get_channel_secret(&channel.id) {
                 Some(url) => match validate_https_url(&url) {
@@ -184,9 +185,9 @@ fn email_job(config: &ChannelConfig, channel_id: &str, title: &str, body: &str) 
     })
 }
 
-pub fn deliver_job(job: &Job, notify_windows: &mut dyn FnMut(&str, &str) -> Result<(), String>) -> Result<(), String> {
+pub fn deliver_job(job: &Job, notify_windows: &mut dyn FnMut(&str, &str, &str) -> Result<(), String>) -> Result<(), String> {
     match job {
-        Job::Windows { title, body } => notify_windows(title, body),
+        Job::Windows { title, body, path } => notify_windows(title, body, path),
         Job::Https { url, body } => https_post(url, body).map(|_| ()),
         Job::Email {
             host,
@@ -470,7 +471,7 @@ mod tests {
             has_secret: false,
             created_at_ms: 0,
         };
-        let (jobs, errors) = build_jobs(&[channel], "Title", "Body");
+        let (jobs, errors) = build_jobs(&[channel], "Title", "Body", "/alerts");
         assert!(errors.is_empty());
         assert!(matches!(jobs[0], Job::Windows { .. }));
     }

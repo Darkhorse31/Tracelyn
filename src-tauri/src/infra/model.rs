@@ -104,6 +104,9 @@ pub struct UptimeCheck {
     pub url: String,
     pub interval_seconds: u64,
     pub enabled: bool,
+    /// HTTPS checks verify the certificate unless this is set.
+    #[serde(default)]
+    pub allow_self_signed: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

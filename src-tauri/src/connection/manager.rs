@@ -153,7 +153,17 @@ async fn run_server_loop(
                     .await;
             }
             Err(err) => {
-                let msg = err.to_string();
+                let held = if let crate::ssh::SshError::NeedsTrust(prompt) = &err {
+                    let _ = app.emit("host-key-prompt", prompt);
+                    if prompt.changed {
+                        "SSH host key changed. The connection stays blocked until you choose Trust or Cancel.".into()
+                    } else {
+                        "Confirm the SSH host key fingerprint before this server can connect.".into()
+                    }
+                } else {
+                    err.to_string()
+                };
+                let msg = held;
                 if disconnected_since.is_none() {
                     disconnected_since = Some(Instant::now());
                 }
@@ -251,6 +261,9 @@ async fn collector_loop(
     };
     let mut redis_failures: u32 = 0;
     let mut redis_retry_at = Instant::now();
+    let mut collector_error: Option<String> = None;
+    let mut collector_name: Option<String> = None;
+    let mut collector_failures: u32 = 0;
     fast.tick().await;
     slow.tick().await;
     services_iv.tick().await;
@@ -271,6 +284,9 @@ async fn collector_loop(
     );
 
     loop {
+        if let Some(prompt) = session.take_host_key_prompt().await {
+            let _ = app.emit("host-key-prompt", &prompt);
+        }
         web.drain_log_lines();
         ingest_access_lines(app, server_id, &mut web, &mut log_buffer);
         tails.drain(&mut log_buffer);
@@ -332,10 +348,26 @@ async fn collector_loop(
                 }
             }
             _ = fast.tick() => {
-                let err = state.poll_fast(session).await.err();
+                match state.poll_fast(session).await {
+                    Ok(()) => {
+                        collector_failures = 0;
+                        collector_error = None;
+                        collector_name = None;
+                    }
+                    Err(err) => {
+                        collector_failures = collector_failures.saturating_add(1);
+                        collector_error = Some(err);
+                        collector_name = Some("system".into());
+                    }
+                }
                 let overview = state.overview(server_id);
                 event_hub.push_overview(overview.clone());
-                event_hub.push_server_detail(state.snapshot(server_id, err));
+                event_hub.push_server_detail(state.snapshot(
+                    server_id,
+                    collector_error.clone(),
+                    collector_name.clone(),
+                    collector_failures,
+                ));
 
                 let state_app = app.state::<AppState>();
                 persist_samples(&state_app, samples_from_overview(&overview));
@@ -352,11 +384,21 @@ async fn collector_loop(
             _ = slow.tick() => {
                 let _ = state.poll_processes(session).await;
                 let _ = state.poll_ss(session).await;
-                event_hub.push_server_detail(state.snapshot(server_id, None));
+                event_hub.push_server_detail(state.snapshot(
+                    server_id,
+                    collector_error.clone(),
+                    collector_name.clone(),
+                    collector_failures,
+                ));
             }
             _ = services_iv.tick() => {
                 let _ = state.poll_services(session).await;
-                event_hub.push_server_detail(state.snapshot(server_id, None));
+                event_hub.push_server_detail(state.snapshot(
+                    server_id,
+                    collector_error.clone(),
+                    collector_name.clone(),
+                    collector_failures,
+                ));
             }
             _ = web_iv.tick() => {
                 let rules = app.state::<AppState>().config.lock().route_rules(server_id);
@@ -456,8 +498,11 @@ async fn collector_loop(
                             let state_app = app.state::<AppState>();
                             persist_samples(&state_app, samples_from_redis(server_id, &snap));
                             let mut alert_metrics = HashMap::new();
+                            alert_metrics.insert("redis.up".into(), 1.0);
                             if let Some(ratio) = snap.derived.memory_used_ratio {
                                 alert_metrics.insert("redis.memory_used_ratio".into(), ratio);
+                                let percent = if ratio <= 1.5 { ratio * 100.0 } else { ratio };
+                                alert_metrics.insert("redis.memory_used_percent".into(), percent);
                             }
                             evaluate_live_alerts(app, server_id, true, alert_metrics);
                         }
@@ -475,6 +520,9 @@ async fn collector_loop(
                             };
                             redis_phase = phase;
                             push_redis_phase(event_hub, server_id, &redis_phase, message, &redis_endpoints);
+                            let mut alert_metrics = HashMap::new();
+                            alert_metrics.insert("redis.up".into(), 0.0);
+                            evaluate_live_alerts(app, server_id, true, alert_metrics);
                         }
                     }
                 }

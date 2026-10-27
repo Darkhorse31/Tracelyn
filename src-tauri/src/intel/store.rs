@@ -28,6 +28,7 @@ pub fn migrate(conn: &Connection) -> Result<(), IntelError> {
             last_value REAL,
             last_error TEXT,
             checked_at_ms INTEGER NOT NULL DEFAULT 0,
+            last_notify_ms INTEGER,
             PRIMARY KEY (rule_id, server_id)
         );
         CREATE TABLE IF NOT EXISTS intel_channels (
@@ -47,7 +48,9 @@ pub fn migrate(conn: &Connection) -> Result<(), IntelError> {
             opened_at_ms INTEGER NOT NULL,
             updated_at_ms INTEGER NOT NULL,
             acked_at_ms INTEGER,
-            resolved_at_ms INTEGER
+            resolved_at_ms INTEGER,
+            snooze_until_ms INTEGER,
+            unread INTEGER NOT NULL DEFAULT 1
         );
         CREATE INDEX IF NOT EXISTS idx_intel_incidents_server
             ON intel_incidents (server_id, updated_at_ms DESC);
@@ -125,8 +128,48 @@ pub fn migrate(conn: &Connection) -> Result<(), IntelError> {
             alert_id TEXT PRIMARY KEY,
             ts_ms INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS intel_dedupe (
+            fingerprint TEXT PRIMARY KEY,
+            ts_ms INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS intel_restart_sample (
+            server_id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            ts_ms INTEGER NOT NULL,
+            restarts INTEGER NOT NULL,
+            PRIMARY KEY (server_id, app_id, ts_ms)
+        );
+        CREATE TABLE IF NOT EXISTS intel_seen_error (
+            server_id TEXT NOT NULL,
+            signature TEXT NOT NULL,
+            PRIMARY KEY (server_id, signature)
+        );
+        CREATE TABLE IF NOT EXISTS intel_seen_login (
+            server_id TEXT NOT NULL,
+            signature TEXT NOT NULL,
+            PRIMARY KEY (server_id, signature)
+        );
+        CREATE TABLE IF NOT EXISTS intel_app_version (
+            server_id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            version TEXT NOT NULL,
+            PRIMARY KEY (server_id, app_id)
+        );
+        CREATE TABLE IF NOT EXISTS intel_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         ",
     )?;
+    let _ = conn.execute("ALTER TABLE intel_incidents ADD COLUMN snooze_until_ms INTEGER", []);
+    let _ = conn.execute(
+        "ALTER TABLE intel_incidents ADD COLUMN unread INTEGER NOT NULL DEFAULT 1",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE intel_rule_state ADD COLUMN last_notify_ms INTEGER",
+        [],
+    );
     Ok(())
 }
 
@@ -215,7 +258,7 @@ pub fn delete_rule(conn: &Connection, id: &str) -> Result<(), IntelError> {
 pub fn load_state(conn: &Connection, rule_id: &str, server_id: &str) -> Result<RuleRuntime, IntelError> {
     let row = conn
         .query_row(
-            "SELECT firing, condition_since_ms, clear_since_ms, last_value, last_error, checked_at_ms
+            "SELECT firing, condition_since_ms, clear_since_ms, last_value, last_error, checked_at_ms, last_notify_ms
              FROM intel_rule_state WHERE rule_id = ?1 AND server_id = ?2",
             params![rule_id, server_id],
             |row| {
@@ -226,6 +269,7 @@ pub fn load_state(conn: &Connection, rule_id: &str, server_id: &str) -> Result<R
                     last_value: row.get(3)?,
                     last_error: row.get(4)?,
                     checked_at_ms: row.get(5)?,
+                    last_notify_ms: row.get(6)?,
                 })
             },
         )
@@ -236,15 +280,16 @@ pub fn load_state(conn: &Connection, rule_id: &str, server_id: &str) -> Result<R
 pub fn save_state(conn: &Connection, rule_id: &str, server_id: &str, state: &RuleRuntime) -> Result<(), IntelError> {
     conn.execute(
         "INSERT INTO intel_rule_state
-            (rule_id, server_id, firing, condition_since_ms, clear_since_ms, last_value, last_error, checked_at_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            (rule_id, server_id, firing, condition_since_ms, clear_since_ms, last_value, last_error, checked_at_ms, last_notify_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(rule_id, server_id) DO UPDATE SET
             firing = excluded.firing,
             condition_since_ms = excluded.condition_since_ms,
             clear_since_ms = excluded.clear_since_ms,
             last_value = excluded.last_value,
             last_error = excluded.last_error,
-            checked_at_ms = excluded.checked_at_ms",
+            checked_at_ms = excluded.checked_at_ms,
+            last_notify_ms = excluded.last_notify_ms",
         params![
             rule_id,
             server_id,
@@ -253,7 +298,8 @@ pub fn save_state(conn: &Connection, rule_id: &str, server_id: &str, state: &Rul
             state.clear_since_ms,
             state.last_value,
             state.last_error,
-            state.checked_at_ms
+            state.checked_at_ms,
+            state.last_notify_ms
         ],
     )?;
     Ok(())
@@ -318,7 +364,7 @@ pub fn delete_channel(conn: &Connection, id: &str) -> Result<(), IntelError> {
 
 pub fn list_incidents(conn: &Connection, server_id: Option<&str>) -> Result<Vec<Incident>, IntelError> {
     let mut stmt = conn.prepare(
-        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms
+        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
          FROM intel_incidents
          WHERE (?1 IS NULL OR server_id = ?1)
          ORDER BY updated_at_ms DESC
@@ -339,13 +385,15 @@ fn incident_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Incident> {
         updated_at_ms: row.get(6)?,
         acked_at_ms: row.get(7)?,
         resolved_at_ms: row.get(8)?,
+        snooze_until_ms: row.get(9)?,
+        unread: row.get::<_, i64>(10)? != 0,
     })
 }
 
 pub fn get_incident(conn: &Connection, id: &str) -> Result<Option<Incident>, IntelError> {
     let row = conn
         .query_row(
-            "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms
+            "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
              FROM intel_incidents WHERE id = ?1",
             params![id],
             incident_row,
@@ -374,7 +422,7 @@ pub fn open_incident(
         let current = get_incident(conn, &existing)?.ok_or_else(|| IntelError::Bad("incident missing".into()))?;
         let severity = super::logic::max_severity(&current.severity, severity);
         conn.execute(
-            "UPDATE intel_incidents SET severity = ?1, updated_at_ms = ?2 WHERE id = ?3",
+            "UPDATE intel_incidents SET severity = ?1, updated_at_ms = ?2, unread = 1 WHERE id = ?3",
             params![severity, ts_ms, existing],
         )?;
         return Ok(existing);
@@ -854,7 +902,7 @@ pub fn incident_counts(conn: &Connection, since_ms: i64) -> Result<(usize, usize
 
 pub fn incidents_since(conn: &Connection, since_ms: i64) -> Result<Vec<Incident>, IntelError> {
     let mut stmt = conn.prepare(
-        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms
+        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
          FROM intel_incidents
          WHERE opened_at_ms >= ?1 OR updated_at_ms >= ?1
          ORDER BY updated_at_ms DESC LIMIT 20",
@@ -865,6 +913,270 @@ pub fn incidents_since(conn: &Connection, since_ms: i64) -> Result<Vec<Incident>
 
 pub fn new_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+pub fn any_firing(conn: &Connection, server_id: &str) -> Result<bool, IntelError> {
+    let hit: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM intel_rule_state WHERE server_id = ?1 AND firing = 1 LIMIT 1",
+            params![server_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(hit.is_some())
+}
+
+pub fn resolve_recent(conn: &Connection, server_id: &str, ts_ms: i64) -> Result<(), IntelError> {
+    let since = ts_ms - super::logic::JOIN_WINDOW_MS;
+    conn.execute(
+        "UPDATE intel_incidents
+         SET status = 'resolved', resolved_at_ms = ?1, updated_at_ms = ?1, unread = 0
+         WHERE server_id = ?2 AND status != 'resolved' AND updated_at_ms >= ?3",
+        params![ts_ms, server_id, since],
+    )?;
+    Ok(())
+}
+
+pub fn snooze_incident(conn: &Connection, id: &str, until_ms: i64) -> Result<(), IntelError> {
+    let changed = conn.execute(
+        "UPDATE intel_incidents
+         SET snooze_until_ms = ?1, updated_at_ms = ?2
+         WHERE id = ?3 AND status != 'resolved'",
+        params![until_ms, until_ms, id],
+    )?;
+    if changed == 0 {
+        return Err(IntelError::Bad("incident is not open".into()));
+    }
+    Ok(())
+}
+
+pub fn incident_snoozed(conn: &Connection, id: &str, ts_ms: i64) -> Result<bool, IntelError> {
+    let until: Option<i64> = conn
+        .query_row(
+            "SELECT snooze_until_ms FROM intel_incidents WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(until.is_some_and(|until| until > ts_ms))
+}
+
+pub fn unread_count(conn: &Connection) -> Result<i64, IntelError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM intel_incidents WHERE unread = 1 AND status != 'resolved'",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(count)
+}
+
+pub fn mark_alerts_read(conn: &Connection) -> Result<(), IntelError> {
+    conn.execute(
+        "UPDATE intel_incidents SET unread = 0 WHERE unread = 1",
+        [],
+    )?;
+    Ok(())
+}
+
+pub fn admit_fingerprint(
+    conn: &Connection,
+    fingerprint: &str,
+    ts_ms: i64,
+    window_ms: i64,
+) -> Result<bool, IntelError> {
+    let last: Option<i64> = conn
+        .query_row(
+            "SELECT ts_ms FROM intel_dedupe WHERE fingerprint = ?1",
+            params![fingerprint],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if !super::policy::dedupe_admit(last, ts_ms, window_ms) {
+        return Ok(false);
+    }
+    conn.execute(
+        "INSERT INTO intel_dedupe (fingerprint, ts_ms) VALUES (?1, ?2)
+         ON CONFLICT(fingerprint) DO UPDATE SET ts_ms = excluded.ts_ms",
+        params![fingerprint, ts_ms],
+    )?;
+    Ok(true)
+}
+
+pub fn record_restart_sample(
+    conn: &Connection,
+    server_id: &str,
+    app_id: &str,
+    ts_ms: i64,
+    restarts: u64,
+) -> Result<(), IntelError> {
+    conn.execute(
+        "INSERT INTO intel_restart_sample (server_id, app_id, ts_ms, restarts) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(server_id, app_id, ts_ms) DO UPDATE SET restarts = excluded.restarts",
+        params![server_id, app_id, ts_ms, restarts as i64],
+    )?;
+    let keep = ts_ms - 86_400_000;
+    conn.execute(
+        "DELETE FROM intel_restart_sample WHERE server_id = ?1 AND app_id = ?2 AND ts_ms < ?3",
+        params![server_id, app_id, keep],
+    )?;
+    Ok(())
+}
+
+pub fn restart_samples(
+    conn: &Connection,
+    server_id: &str,
+    app_id: &str,
+    since_ms: i64,
+) -> Result<Vec<(i64, u64)>, IntelError> {
+    let mut stmt = conn.prepare(
+        "SELECT ts_ms, restarts FROM intel_restart_sample
+         WHERE server_id = ?1 AND app_id = ?2 AND ts_ms >= ?3
+         ORDER BY ts_ms ASC",
+    )?;
+    let rows = stmt.query_map(params![server_id, app_id, since_ms], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as u64))
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(IntelError::from)
+}
+
+pub fn remember_error(conn: &Connection, server_id: &str, signature: &str) -> Result<bool, IntelError> {
+    let inserted = conn.execute(
+        "INSERT INTO intel_seen_error (server_id, signature) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+        params![server_id, signature],
+    )?;
+    Ok(inserted == 1)
+}
+
+pub fn has_any_error(conn: &Connection, server_id: &str) -> Result<bool, IntelError> {
+    let hit: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM intel_seen_error WHERE server_id = ?1 LIMIT 1",
+            params![server_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(hit.is_some())
+}
+
+pub fn remember_login(conn: &Connection, server_id: &str, signature: &str) -> Result<bool, IntelError> {
+    let inserted = conn.execute(
+        "INSERT INTO intel_seen_login (server_id, signature) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+        params![server_id, signature],
+    )?;
+    Ok(inserted == 1)
+}
+
+pub fn has_any_login(conn: &Connection, server_id: &str) -> Result<bool, IntelError> {
+    let hit: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM intel_seen_login WHERE server_id = ?1 LIMIT 1",
+            params![server_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(hit.is_some())
+}
+
+pub fn take_version(conn: &Connection, server_id: &str, app_id: &str, version: &str) -> Result<Option<String>, IntelError> {
+    let previous: Option<String> = conn
+        .query_row(
+            "SELECT version FROM intel_app_version WHERE server_id = ?1 AND app_id = ?2",
+            params![server_id, app_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if !version.is_empty() {
+        conn.execute(
+            "INSERT INTO intel_app_version (server_id, app_id, version) VALUES (?1, ?2, ?3)
+             ON CONFLICT(server_id, app_id) DO UPDATE SET version = excluded.version",
+            params![server_id, app_id, version],
+        )?;
+    }
+    Ok(previous)
+}
+
+pub fn meta_get(conn: &Connection, key: &str) -> Result<Option<String>, IntelError> {
+    conn.query_row(
+        "SELECT value FROM intel_meta WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(IntelError::from)
+}
+
+pub fn meta_set(conn: &Connection, key: &str, value: &str) -> Result<(), IntelError> {
+    conn.execute(
+        "INSERT INTO intel_meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+pub fn sound_enabled(conn: &Connection) -> Result<bool, IntelError> {
+    Ok(meta_get(conn, "sound")?.map(|v| v != "0").unwrap_or(true))
+}
+
+pub fn seed_defaults(conn: &Connection, now_ms: i64) -> Result<(), IntelError> {
+    if meta_get(conn, "alert_templates_v1")?.is_some() {
+        return Ok(());
+    }
+    let builtins = [
+        ("App crashed or exited", "app_crash", "critical", 1.0, 0u64, 0u64, 900u64),
+        ("App restart loop", "restart_loop", "critical", 5.0, 0, 600, 900),
+        ("App is down", "app_down", "critical", 0.0, 60, 0, 300),
+    ];
+    for (name, kind, severity, threshold, duration, window, cooldown) in builtins {
+        let exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM intel_rules WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        )?;
+        if exists > 0 {
+            continue;
+        }
+        let mut params = super::types::RuleParams::default();
+        params.threshold = threshold;
+        params.duration_secs = duration;
+        params.window_secs = if window == 0 { 60 } else { window };
+        params.cooldown_secs = cooldown;
+        params.clear_duration_secs = 30;
+        if kind == "app_down" {
+            params.clear_threshold = Some(0.5);
+        }
+        let rule = super::types::IntelRule {
+            id: new_id(),
+            server_id: None,
+            kind: kind.into(),
+            name: name.into(),
+            enabled: true,
+            severity: severity.into(),
+            params,
+            created_at_ms: now_ms,
+            updated_at_ms: now_ms,
+            firing: false,
+        };
+        upsert_rule(conn, &rule)?;
+    }
+    let channels: i64 = conn.query_row("SELECT COUNT(*) FROM intel_channels", [], |row| row.get(0))?;
+    if channels == 0 {
+        upsert_channel(
+            conn,
+            &super::types::Channel {
+                id: "channel-desktop".into(),
+                name: "Desktop notifications".into(),
+                kind: "windows".into(),
+                enabled: true,
+                config: super::types::ChannelConfig::default(),
+                has_secret: false,
+                created_at_ms: now_ms,
+            },
+        )?;
+    }
+    meta_set(conn, "alert_templates_v1", "1")?;
+    Ok(())
 }
 
 pub fn anomalies_as_timeline(

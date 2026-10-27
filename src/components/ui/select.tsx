@@ -194,6 +194,7 @@ function SimpleSelect({
   placeholder,
   className,
   ariaLabel,
+  disabled,
 }: {
   id?: string
   value: string
@@ -202,16 +203,18 @@ function SimpleSelect({
   placeholder?: string
   className?: string
   ariaLabel?: string
+  disabled?: boolean
 }) {
   return (
     <Select
+      disabled={disabled}
       value={value === "" ? null : value}
       onValueChange={(next) => {
         if (next) onValueChange(next)
       }}
     >
       <SelectTrigger id={id} aria-label={ariaLabel} className={cn("w-full min-w-36", className)}>
-        <SelectValue placeholder={placeholder} />
+        <SelectValue placeholder={placeholder}>{options.find(option => option.value === value)?.label}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (

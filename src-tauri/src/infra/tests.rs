@@ -260,6 +260,7 @@ fn sqlite_check_retention_target_and_disk_roundtrip() {
         url: "https://example.com/".into(),
         interval_seconds: 60,
         enabled: true,
+        allow_self_signed: false,
     };
     db.execute(
         "INSERT INTO infra_checks VALUES('c','s',?1)",

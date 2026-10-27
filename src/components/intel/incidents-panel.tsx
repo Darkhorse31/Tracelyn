@@ -12,6 +12,8 @@ import type { Incident } from "@/pages/intel/types";
 export function IncidentsPanel() {
   const { servers, selectedServerId } = useServersContext();
   const [scope, setScope] = useState<"selected" | "all">("selected");
+  const [severity, setSeverity] = useState<"all" | "info" | "warning" | "critical">("all");
+  const [status, setStatus] = useState<"all" | "open" | "ack" | "resolved">("all");
   const [rows, setRows] = useState<Incident[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const serverId = scope === "all" ? undefined : selectedServerId ?? undefined;
@@ -35,6 +37,11 @@ export function IncidentsPanel() {
   }, [serverId]);
 
   const nameOf = (id: string) => servers.find((server) => server.id === id)?.name ?? id;
+  const visible = (rows ?? []).filter((incident) => {
+    if (severity !== "all" && incident.severity !== severity) return false;
+    if (status !== "all" && incident.status !== status) return false;
+    return true;
+  });
 
   return (
     <Card>
@@ -46,13 +53,23 @@ export function IncidentsPanel() {
             includes PM2 restart jumps, anomalies, notes, and acknowledgements.
           </CardDescription>
         </div>
-        <div className="flex gap-2" role="group" aria-label="Incident scope">
+        <div className="flex flex-wrap justify-end gap-2" role="group" aria-label="Incident filters">
           <Button type="button" size="sm" variant={scope === "selected" ? "default" : "outline"} onClick={() => setScope("selected")} aria-pressed={scope === "selected"}>
             This server
           </Button>
           <Button type="button" size="sm" variant={scope === "all" ? "default" : "outline"} onClick={() => setScope("all")} aria-pressed={scope === "all"}>
             All servers
           </Button>
+          {(["all", "info", "warning", "critical"] as const).map((value) => (
+            <Button key={value} type="button" size="sm" variant={severity === value ? "default" : "outline"} onClick={() => setSeverity(value)} aria-pressed={severity === value}>
+              {value === "all" ? "Any severity" : value.charAt(0).toUpperCase() + value.slice(1)}
+            </Button>
+          ))}
+          {(["all", "open", "ack", "resolved"] as const).map((value) => (
+            <Button key={`status-${value}`} type="button" size="sm" variant={status === value ? "default" : "outline"} onClick={() => setStatus(value)} aria-pressed={status === value}>
+              {value === "all" ? "Any status" : statusLabel(value)}
+            </Button>
+          ))}
         </div>
       </CardHeader>
       <CardContent>
@@ -68,7 +85,10 @@ export function IncidentsPanel() {
         {rows && rows.length === 0 && (
           <EmptyState title="No incidents" description="Rules that fire, and alerts from the Alerts page, are grouped here." />
         )}
-        {rows && rows.length > 0 && (
+        {rows && rows.length > 0 && visible.length === 0 && (
+          <EmptyState title="No matching incidents" description="Change the severity or status filter to see more history." />
+        )}
+        {visible.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <caption className="sr-only">Incidents</caption>
@@ -82,7 +102,7 @@ export function IncidentsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((incident) => (
+                {visible.map((incident) => (
                   <tr key={incident.id} className="border-b border-border/70">
                     <th scope="row" className="py-2 pr-3 font-medium">
                       <Link className="underline-offset-4 hover:underline" to={`/intel/incidents/${incident.id}`}>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listenWhileMounted } from "@/lib/events";
+import { readPreference, writePreference } from "@/hooks/use-remembered-state";
 import {
   connectServer,
   deleteServer,
@@ -20,7 +21,12 @@ export function useServers() {
   const [servers, setServers] = useState<ServerRecord[]>([]);
   const [statuses, setStatuses] = useState<ServerStatus[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedServerId, setSelectedId] = useState<string | null>(() => readPreference("selected-server", "") || null);
+  const setSelectedServerId = useCallback((id: string | null) => {
+    setSelectedId(id);
+    writePreference("selected-server", id ?? "");
+  }, []);
 
   const refresh = useCallback(async () => {
     const [nextServers, nextStatuses] = await Promise.all([
@@ -29,16 +35,21 @@ export function useServers() {
     ]);
     setServers(nextServers);
     setStatuses(nextStatuses);
-    if (!selectedServerId && nextServers.length > 0) {
-      setSelectedServerId(nextServers[0].id);
-    }
-  }, [selectedServerId]);
+    setError(null);
+    setSelectedId(previous => {
+      const id = nextServers.some(s => s.id === previous) ? previous : nextServers[0]?.id ?? null;
+      writePreference("selected-server", id ?? "");
+      return id;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         await refresh();
+      } catch (err) {
+        if (!cancelled) setError(String(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -108,6 +119,7 @@ export function useServers() {
     statuses,
     statusById,
     loading,
+    error,
     selectedServerId,
     setSelectedServerId,
     refresh,

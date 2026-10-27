@@ -24,6 +24,14 @@ import { SlowQueriesPage } from "@/pages/slow-queries-page";
 import { TraceDetailPage } from "@/pages/trace-detail-page";
 import { TracesPage } from "@/pages/traces-page";
 import { WebTrafficPage } from "@/pages/web-traffic-page";
+import { AllServersPage } from "@/pages/all-servers-page";
+import { WelcomePage } from "@/pages/welcome-page";
+import { useServersContext } from "@/contexts/servers-context";
+
+function HomePage() {
+  const { servers } = useServersContext();
+  return servers.length >= 2 ? <AllServersPage /> : <OverviewPage />;
+}
 
 function App() {
   return (
@@ -32,7 +40,9 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<AppShell />}>
-            <Route index element={<OverviewPage />} />
+            <Route index element={<HomePage />} />
+            <Route path="servers" element={<AllServersPage />} />
+            <Route path="welcome" element={<WelcomePage />} />
             <Route path="server" element={<ServerPage />} />
             <Route path="apps" element={<AppsPage />} />
             <Route path="apps/:appId" element={<AppDetailPage />} />

@@ -48,6 +48,45 @@ impl InfraState {
             .or_default()
             .insert(snapshot.collector.clone(), snapshot);
     }
+    pub fn has_collector(&self, server: &str, collector: &str) -> bool {
+        self.snapshots
+            .lock()
+            .get(server)
+            .and_then(|map| map.get(collector))
+            .is_some()
+    }
+    pub fn minimum_number(&self, server: &str, collector: &str, field: &str) -> Option<f64> {
+        self.snapshots.lock().get(server).and_then(|map| map.get(collector)).and_then(|snap| {
+            snap.rows.iter().filter_map(|row| row.number(field)).reduce(f64::min)
+        })
+    }
+    pub fn maximum_number(&self, server: &str, collector: &str, field: &str) -> Option<f64> {
+        self.snapshots.lock().get(server).and_then(|map| map.get(collector)).and_then(|snap| {
+            snap.rows.iter().filter_map(|row| row.number(field)).reduce(f64::max)
+        })
+    }
+    pub fn field_strings(&self, server: &str, collector: &str, field: &str) -> Vec<String> {
+        self.snapshots
+            .lock()
+            .get(server)
+            .and_then(|map| map.get(collector))
+            .map(|snap| {
+                snap.rows
+                    .iter()
+                    .filter_map(|row| row.fields.get(field).and_then(|value| value.as_str()).map(|s| s.to_string()))
+                    .take(100)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    pub fn uptime_ok(&self, server: &str) -> Option<bool> {
+        let snaps = self.snapshots.lock();
+        let snap = snaps.get(server)?.get("uptime")?;
+        if snap.rows.is_empty() {
+            return None;
+        }
+        Some(!snap.rows.iter().any(|row| row.state == "down"))
+    }
     pub fn generation(&self, server: &str) -> u64 {
         *self.generations.lock().get(server).unwrap_or(&0)
     }
@@ -501,7 +540,7 @@ pub async fn run_uptime_check(
             .find(|c| c.id == check_id)
             .ok_or("Check no longer exists")?
     };
-    let result = local::check(&check.url).await;
+    let result = local::check_with(&check.url, check.allow_self_signed).await;
     {
         let state = app.state::<AppState>();
         let db = state.metrics.lock();

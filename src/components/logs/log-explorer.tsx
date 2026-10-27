@@ -14,6 +14,7 @@ import { useApps } from "@/hooks/use-apps";
 import { useLogStream } from "@/hooks/use-log-stream";
 import { LOG_LEVELS, type LogLevel, type LogLine } from "@/lib/log-types";
 import { cn } from "@/lib/utils";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 
 const SAVED_KEY = "tracelyn-log-filters";
 
@@ -53,19 +54,22 @@ export function LogExplorer({
   title?: string;
 }) {
   const { apps } = useApps();
-  const [levels, setLevels] = useState<LogLevel[]>(levelLock ?? []);
-  const [pickedApps, setPickedApps] = useState<string[]>(lockedAppId ? [lockedAppId] : []);
+  const scope = `logs:${serverId ?? "none"}:${lockedAppId ?? "all"}:${title}`;
+  const [storedLevels, setLevels] = useRememberedState<LogLevel[]>(`${scope}:levels`, []);
+  const levels = levelLock ?? storedLevels;
+  const [storedApps, setPickedApps] = useRememberedState<string[]>(`${scope}:apps`, []);
+  const pickedApps = lockedAppId ? [lockedAppId] : storedApps;
   const [params] = useSearchParams();
   const query = params.get("q") ?? "";
-  const [text, setText] = useState(query);
+  const [text, setText] = useRememberedState(`${scope}:text`, query);
   useEffect(() => {
-    setText(query);
-  }, [query]);
-  const [useRegex, setUseRegex] = useState(false);
-  const [exclude, setExclude] = useState("");
-  const [range, setRange] = useState<RangeId>("live");
-  const [customStart, setCustomStart] = useState("");
-  const [follow, setFollow] = useState(true);
+    if (params.has("q")) setText(query);
+  }, [query, params, setText]);
+  const [useRegex, setUseRegex] = useRememberedState(`${scope}:regex`, false);
+  const [exclude, setExclude] = useRememberedState(`${scope}:exclude`, "");
+  const [range, setRange] = useRememberedState<RangeId>(`${scope}:range`, "live");
+  const [customStart, setCustomStart] = useRememberedState(`${scope}:custom-start`, "");
+  const [follow, setFollow] = useRememberedState(`${scope}:follow`, true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState<SavedFilter[]>(() => readSaved());
   const [saveName, setSaveName] = useState("");

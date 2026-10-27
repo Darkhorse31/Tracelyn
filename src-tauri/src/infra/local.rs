@@ -51,7 +51,39 @@ async fn resolve(host: &str, port: u16) -> Result<(Vec<SocketAddr>, f64), String
     }
     Ok((addresses, start.elapsed().as_secs_f64() * 1000.))
 }
+pub fn curl_args(url: &str, allow_self_signed: bool) -> Vec<String> {
+    let mut args = vec![
+        "--disable".into(),
+        "--silent".into(),
+        "--show-error".into(),
+        "--noproxy".into(),
+        "*".into(),
+        "--connect-timeout".into(),
+        "4".into(),
+        "--max-time".into(),
+        "10".into(),
+        "--max-filesize".into(),
+        "1048576".into(),
+        "--output".into(),
+        "NUL".into(),
+        "--write-out".into(),
+        "%{json}".into(),
+        "--proto".into(),
+        "=http,https".into(),
+    ];
+    if allow_self_signed {
+        args.push("--insecure".into());
+    }
+    args.push("--url".into());
+    args.push(url.to_string());
+    args
+}
+
 pub async fn check(raw: &str) -> CheckResult {
+    check_with(raw, false).await
+}
+
+pub async fn check_with(raw: &str, allow_self_signed: bool) -> CheckResult {
     let start = Instant::now();
     let mut result = CheckResult {
         ts_ms: now_ms(),
@@ -90,29 +122,8 @@ pub async fn check(raw: &str) -> CheckResult {
     }
     let raw = url.to_string();
     let response = tauri::async_runtime::spawn_blocking(move || {
-        hidden_command("curl.exe")
-            .args([
-                "--disable",
-                "--silent",
-                "--show-error",
-                "--noproxy",
-                "*",
-                "--connect-timeout",
-                "4",
-                "--max-time",
-                "10",
-                "--max-filesize",
-                "1048576",
-                "--output",
-                "NUL",
-                "--write-out",
-                "%{json}",
-                "--proto",
-                "=http,https",
-                "--url",
-                &raw,
-            ])
-            .output()
+        let args = curl_args(&raw, allow_self_signed);
+        hidden_command("curl.exe").args(args).output()
     })
     .await;
     match response {
@@ -337,7 +348,7 @@ pub fn spawn(app: AppHandle) {
                     let Ok(_permit) = slots.acquire_owned().await else {
                         return key;
                     };
-                    let result = check_url(&check.url).await;
+                    let result = check_url(&check.url, check.allow_self_signed).await;
                     let saved = {
                         let state = handle.state::<AppState>();
                         let db = state.metrics.lock();
@@ -410,8 +421,8 @@ pub fn spawn(app: AppHandle) {
         }
     });
 }
-async fn check_url(url: &str) -> CheckResult {
-    check(url).await
+async fn check_url(url: &str, allow_self_signed: bool) -> CheckResult {
+    check_with(url, allow_self_signed).await
 }
 
 #[cfg(test)]
@@ -423,6 +434,14 @@ mod tests {
         assert!(validate_url("file:///etc/passwd").is_err());
         assert!(validate_url("https://user:secret@example.com").is_err());
         assert!(validate_url("https://example.com/#secret").is_err());
+    }
+    #[test]
+    fn https_checks_verify_tls_unless_self_signed_is_allowed() {
+        let strict = curl_args("https://example.com/health", false);
+        let loose = curl_args("https://example.com/health", true);
+        assert!(!strict.iter().any(|arg| arg == "--insecure"));
+        assert!(loose.iter().any(|arg| arg == "--insecure"));
+        assert_eq!(strict.last().map(String::as_str), Some("https://example.com/health"));
     }
     #[test]
     fn tls_reads_obey_the_total_deadline() {

@@ -18,6 +18,7 @@ import { Masked, SecretInput } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTemplates } from "@/components/intel/alert-templates";
 import { SeverityBadge } from "@/components/intel/format";
 import { useServersContext } from "@/contexts/servers-context";
 import { deleteIntelRule, evaluateIntel, listIntelRules, upsertIntelRule } from "@/pages/intel/api";
@@ -86,6 +87,7 @@ export function RulesPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AlertTemplates onChanged={load} />
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
@@ -204,8 +206,8 @@ function RuleDialog({
   const [draft, setDraft] = useState(rule);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const low = draft.kind === "ssl_expiry" || draft.kind === "uptime";
-  const needsMetric = draft.kind === "metric" || draft.kind === "error_rate" || draft.kind === "p95";
+  const low = ["ssl_expiry", "uptime", "app_down", "disk_forecast", "server_unreachable", "redis_down", "service_stopped"].includes(draft.kind);
+  const needsMetric = draft.kind === "metric" || draft.kind === "error_rate" || draft.kind === "p95" || draft.kind === "disk_forecast";
   const invalid = !draft.name.trim() || !Number.isFinite(draft.params.threshold);
 
   return (
@@ -305,6 +307,19 @@ function RuleDialog({
               </datalist>
             </div>
           )}
+          {draft.kind === "restart_loop" && (
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-loop-window`}>Window (seconds)</Label>
+              <Input
+                id={`${formId}-loop-window`}
+                type="number"
+                min={1}
+                className="font-mono"
+                value={draft.params.windowSecs}
+                onChange={(e) => setDraft({ ...draft, params: { ...draft.params, windowSecs: Number(e.target.value) } })}
+              />
+            </div>
+          )}
           {draft.kind === "log_pattern" && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
@@ -399,6 +414,60 @@ function RuleDialog({
                 className="font-mono"
                 value={draft.params.durationSecs}
                 onChange={(e) => setDraft({ ...draft, params: { ...draft.params, durationSecs: Number(e.target.value) } })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-cooldown`}>Cooldown (seconds)</Label>
+              <Input
+                id={`${formId}-cooldown`}
+                type="number"
+                min={0}
+                className="font-mono"
+                value={draft.params.cooldownSecs ?? 0}
+                onChange={(e) => setDraft({ ...draft, params: { ...draft.params, cooldownSecs: Number(e.target.value) } })}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-quiet-start`}>Quiet from (minutes after midnight)</Label>
+              <Input
+                id={`${formId}-quiet-start`}
+                type="number"
+                min={0}
+                max={1439}
+                className="font-mono"
+                value={draft.params.quietStartMin ?? ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    params: { ...draft.params, quietStartMin: e.target.value === "" ? null : Number(e.target.value) },
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-quiet-end`}>Quiet until (minutes after midnight)</Label>
+              <Input
+                id={`${formId}-quiet-end`}
+                type="number"
+                min={0}
+                max={1439}
+                className="font-mono"
+                value={draft.params.quietEndMin ?? ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    params: { ...draft.params, quietEndMin: e.target.value === "" ? null : Number(e.target.value) },
+                  })
+                }
+              />
+            </div>
+            <div className="grid gap-1.5 sm:col-span-2">
+              <Label htmlFor={`${formId}-app`}>App id (blank means every app)</Label>
+              <Input
+                id={`${formId}-app`}
+                className="font-mono"
+                value={draft.params.appId ?? ""}
+                onChange={(e) => setDraft({ ...draft, params: { ...draft.params, appId: e.target.value } })}
               />
             </div>
             <div className="grid gap-1.5">

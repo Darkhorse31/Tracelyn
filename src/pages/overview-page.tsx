@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import { reportHostKeyError } from "@/components/security/host-key-dialog";
 import { ServerCard } from "@/components/servers/server-card";
 import { InfraSummaryCard } from "@/components/infra/summary-card";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
@@ -11,6 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useServersContext } from "@/contexts/servers-context";
 import { useOverviewMetrics } from "@/hooks/use-overview-metrics";
 import type { ConnectionStatus, ServerRecord } from "@/lib/types";
+import { Notice } from "@/components/status/notice";
+import { Masked } from "@/contexts/privacy-context";
+import { ServerImportDialog } from "@/components/servers/server-import-dialog";
 
 function statusRank(status: ConnectionStatus | undefined): number {
   switch (status) {
@@ -64,10 +68,11 @@ function sortServers(
 }
 
 export function OverviewPage() {
-  const { servers, statusById, loading, connect, disconnect, selectedServerId } =
+  const { servers, statusById, loading, error, refresh, connect, disconnect, selectedServerId } =
     useServersContext();
   const metricsById = useOverviewMetrics(true);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const sorted = sortServers(servers, statusById, metricsById);
@@ -78,7 +83,9 @@ export function OverviewPage() {
       await connect(id);
       toast.success("Connected");
     } catch (err) {
-      toast.error("Connection failed", { description: String(err) });
+      if (!reportHostKeyError(err)) {
+        toast.error("Connection failed", { description: String(err) });
+      }
     } finally {
       setBusyId(null);
     }
@@ -104,6 +111,16 @@ export function OverviewPage() {
   }
 
   if (servers.length === 0) {
+    if (error) {
+      return (
+        <Notice tone="critical" title="Could not load servers">
+          <Masked text={error} />
+          <Button className="mt-3" variant="outline" onClick={() => void refresh().catch((err) => toast.error(String(err)))}>
+            Retry
+          </Button>
+        </Notice>
+      );
+    }
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
         <h2 className="text-lg font-semibold">No servers configured</h2>
@@ -115,6 +132,9 @@ export function OverviewPage() {
           <Plus data-icon="inline-start" />
           Add server
         </Button>
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
+          Import servers
+        </Button>
         <div className="flex flex-wrap justify-center gap-2">
           <Link to="/how-it-works" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             How Tracelyn works
@@ -124,6 +144,7 @@ export function OverviewPage() {
           </Link>
         </div>
         <ServerFormDialog open={addOpen} onOpenChange={setAddOpen} />
+        <ServerImportDialog open={importOpen} onOpenChange={setImportOpen} />
       </div>
     );
   }

@@ -16,6 +16,7 @@ import {
   exportReport,
   getIncident,
   resolveIncident,
+  snoozeIncident,
 } from "@/pages/intel/api";
 import type { IncidentDetail } from "@/pages/intel/types";
 
@@ -104,6 +105,18 @@ export function IncidentPage() {
               >
                 Resolve
               </Button>
+              {([15, 60, 1440] as const).map((minutes) => (
+                <Button
+                  key={minutes}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || detail.incident.status === "resolved"}
+                  onClick={() => act(() => snoozeIncident(detail.incident.id, minutes))}
+                >
+                  {minutes === 15 ? "Snooze 15m" : minutes === 60 ? "Snooze 1h" : "Snooze 1d"}
+                </Button>
+              ))}
               <Button
                 type="button"
                 size="sm"

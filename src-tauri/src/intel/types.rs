@@ -30,6 +30,17 @@ pub struct RuleParams {
     pub host: String,
     #[serde(default)]
     pub port: u16,
+    /// Suppress a repeat notification for this long after the last one.
+    #[serde(default)]
+    pub cooldown_secs: u64,
+    /// Local minute of day when quiet hours start. Together with `quiet_end_min`.
+    #[serde(default)]
+    pub quiet_start_min: Option<u16>,
+    #[serde(default)]
+    pub quiet_end_min: Option<u16>,
+    /// Empty means every app on the server.
+    #[serde(default)]
+    pub app_id: String,
 }
 
 fn default_clear_secs() -> u64 {
@@ -51,6 +62,10 @@ impl Default for RuleParams {
             window_secs: 60,
             host: String::new(),
             port: 0,
+            cooldown_secs: 0,
+            quiet_start_min: None,
+            quiet_end_min: None,
+            app_id: String::new(),
         }
     }
 }
@@ -81,6 +96,7 @@ pub struct RuleRuntime {
     pub last_value: Option<f64>,
     pub last_error: Option<String>,
     pub checked_at_ms: i64,
+    pub last_notify_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -134,6 +150,10 @@ pub struct Incident {
     pub updated_at_ms: i64,
     pub acked_at_ms: Option<i64>,
     pub resolved_at_ms: Option<i64>,
+    #[serde(default)]
+    pub snooze_until_ms: Option<i64>,
+    #[serde(default)]
+    pub unread: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -225,6 +245,17 @@ pub const RULE_KINDS: &[&str] = &[
     "p95",
     "ssl_expiry",
     "uptime",
+    "app_crash",
+    "restart_loop",
+    "app_down",
+    "new_error",
+    "disk_forecast",
+    "server_unreachable",
+    "redis_down",
+    "service_stopped",
+    "ssh_login",
+    "ssh_fail_burst",
+    "deploy",
 ];
 
 pub const CHANNEL_KINDS: &[&str] = &[
@@ -250,7 +281,16 @@ pub const WATCH_METRICS: &[&str] = &[
 ];
 
 pub fn is_low_kind(kind: &str) -> bool {
-    matches!(kind, "ssl_expiry" | "uptime")
+    matches!(
+        kind,
+        "ssl_expiry"
+            | "uptime"
+            | "app_down"
+            | "disk_forecast"
+            | "server_unreachable"
+            | "redis_down"
+            | "service_stopped"
+    )
 }
 
 pub fn default_metric_key(kind: &str, configured: &str) -> String {
@@ -261,6 +301,12 @@ pub fn default_metric_key(kind: &str, configured: &str) -> String {
         "error_rate" => "http.5xx_rate_percent".into(),
         "p95" => "endpoint.p95_ms".into(),
         "metric" => "cpu.percent".into(),
+        "disk_forecast" => "disk.forecast_days".into(),
+        "server_unreachable" => "server.connected".into(),
+        "redis_down" => "redis.up".into(),
+        "service_stopped" => "service.nginx".into(),
+        "ssh_fail_burst" => "ssh.fail_count".into(),
+        "app_down" => "health.up".into(),
         _ => String::new(),
     }
 }

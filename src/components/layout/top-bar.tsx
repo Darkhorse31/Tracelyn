@@ -1,3 +1,5 @@
+import { AlertCenter } from "@/components/alerts/alert-center";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { ThemeMenu } from "@/components/theme/theme-controls";
@@ -13,15 +15,18 @@ export function TopBar({ title }: { title: string }) {
     <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/80">
       <SidebarTrigger />
       <Separator orientation="vertical" className="mx-1 h-6" />
-      <h1 className="text-sm font-semibold tracking-tight">{title}</h1>
-      <div className="ml-auto flex items-center gap-2">
+      <h1 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">{title}</h1>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <CommandPalette />
         {enabled && (
           <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
             Privacy mode
           </span>
         )}
+        <AlertCenter />
         <PrivacyToggle />
         <TimeRangePicker
+          className="[&_[data-slot=select-trigger]]:w-28 xl:[&_[data-slot=select-trigger]]:w-44"
           value={range}
           onChange={(next) => {
             if (next.preset === "custom") {

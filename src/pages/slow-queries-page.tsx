@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Link } from "react-router-dom";
 import { Timer } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +23,7 @@ export function SlowQueriesPage() {
   const [rows, setRows] = useState<SlowQueryRow[] | null>(null);
   const [setup, setSetup] = useState<InsightSetup | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [engine, setEngine] = useState("");
+  const [engine, setEngine] = useRememberedState(`slow-queries:${selectedServerId ?? "none"}:engine`, "");
   const server = servers.find((item) => item.id === selectedServerId);
 
   const load = () => {

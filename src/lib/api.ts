@@ -37,6 +37,18 @@ export async function deleteServer(id: string): Promise<void> {
   return invoke("delete_server", { id });
 }
 
+export async function trustHostKey(host: string, port: number, fingerprint: string): Promise<void> {
+  return invoke("trust_host_key", { host, port, fingerprint });
+}
+
+export async function readCrashLog(): Promise<string> {
+  return invoke("read_crash_log");
+}
+
+export async function openCrashLog(): Promise<void> {
+  return invoke("open_crash_log");
+}
+
 export async function testServerConnection(
   input: TestConnectionInput,
 ): Promise<ConnectionTestResult> {

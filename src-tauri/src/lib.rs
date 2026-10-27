@@ -1,4 +1,5 @@
 mod alerts;
+mod crash;
 mod apps;
 mod collectors;
 mod commands;
@@ -14,6 +15,7 @@ mod metrics;
 mod ops;
 mod metrics_ingest;
 mod secrets;
+mod server_import;
 mod setup;
 mod ssh;
 mod state;
@@ -29,10 +31,14 @@ use events::EventHub;
 use ssh::HostKeyStore;
 use state::AppState;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_notification::NotificationExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crash::install();
     let config = ConfigStore::load().expect("failed to load config");
     let host_keys = Arc::new(tokio::sync::Mutex::new(
         HostKeyStore::load().expect("failed to load known hosts"),
@@ -55,9 +61,34 @@ pub fn run() {
             metrics_ingest::spawn_storage_maintenance(handle.clone());
             infra::setup(handle.clone()).map_err(std::io::Error::other)?;
             intel::spawn_scheduler(handle.clone());
+            install_tray(app).map_err(|err| std::io::Error::other(err))?;
+            let navigate = app.handle().clone();
+            let _ = app.notification().on_action(move |action| {
+                if action.action_id() != "tap" {
+                    return;
+                }
+                let path = action
+                    .notification()
+                    .and_then(|note| note.extra().get("path"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("/alerts")
+                    .to_string();
+                let _ = navigate.emit("navigate", path);
+                show_main(&navigate);
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::fleet::preview_server_import,
+            commands::fleet::export_server_profiles,
+            commands::fleet::import_server_profiles,
+            commands::fleet::probe_server_port,
+            commands::fleet::test_onboarding_connection,
+            commands::fleet::run_onboarding_setup_checks,
+            commands::fleet::get_fleet_summary,
+            commands::fleet::start_onboarding_monitoring,
+            commands::fleet::discover_onboarding_apps,
+            commands::fleet::save_onboarding_app_selection,
             infra::get_infra_snapshot,
             infra::refresh_infra,
             infra::get_infra_target,
@@ -72,6 +103,10 @@ pub fn run() {
             commands::upsert_server,
             commands::delete_server,
             commands::test_server_connection,
+            commands::trust_host_key,
+            commands::read_crash_log,
+            commands::crash_log_path,
+            commands::open_crash_log,
             commands::connect_server,
             commands::disconnect_server,
             commands::subscribe_overview_metrics,
@@ -138,6 +173,11 @@ pub fn run() {
             commands::intel::intel_list_incidents,
             commands::intel::intel_get_incident,
             commands::intel::intel_ack_incident,
+            commands::intel::intel_snooze_incident,
+            commands::intel::intel_unread_count,
+            commands::intel::intel_mark_alerts_read,
+            commands::intel::intel_sound_enabled,
+            commands::intel::intel_set_sound,
             commands::intel::intel_resolve_incident,
             commands::intel::intel_add_incident_note,
             commands::intel::intel_anomaly_series,
@@ -167,4 +207,51 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn install_tray(app: &tauri::App) -> Result<(), String> {
+    let open_item = MenuItem::with_id(app, "open", "Open", true, None::<&str>).map_err(|e| e.to_string())?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(app, &[&open_item, &quit_item]).map_err(|e| e.to_string())?;
+    let mut builder = TrayIconBuilder::with_id("status")
+        .tooltip("Tracelyn")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => show_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app).map_err(|e| e.to_string())?;
+    if let Some(window) = app.get_webview_window("main") {
+        let shadow = window.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = shadow.hide();
+            }
+        });
+    }
+    Ok(())
 }

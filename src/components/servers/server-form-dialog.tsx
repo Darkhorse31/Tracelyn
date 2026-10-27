@@ -22,6 +22,7 @@ import {
   SelectValue,
   SimpleSelect,
 } from "@/components/ui/select";
+import { reportHostKeyError } from "@/components/security/host-key-dialog";
 import { inspectSshPrivateKey, listSshPrivateKeys } from "@/lib/api";
 import type { AuthType, ServerRecord } from "@/lib/types";
 import { useServersContext } from "@/contexts/servers-context";
@@ -39,12 +40,14 @@ interface ServerFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   server?: ServerRecord | null;
+  onSaved?: (server: ServerRecord) => void;
 }
 
 export function ServerFormDialog({
   open,
   onOpenChange,
   server,
+  onSaved,
 }: ServerFormDialogProps) {
   const { saveServer, testConnection } = useServersContext();
   const { enabled, field } = usePrivacy();
@@ -132,7 +135,7 @@ export function ServerFormDialog({
     serverId: server?.id,
     name: name.trim(),
     host: host.trim(),
-    port: Number(port) || defaultPort,
+    port: Number(port),
     username: username.trim(),
     authType,
     keyPath: authType === "key" ? keyPath.trim() : undefined,
@@ -144,6 +147,10 @@ export function ServerFormDialog({
   const validate = async () => {
     if (!name.trim() || !host.trim() || !username.trim()) {
       toast.error("Name, host, and username are required.");
+      return false;
+    }
+    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
+      toast.error("Port must be a number from 1 to 65535");
       return false;
     }
     if (authType === "key" && !keyPath.trim()) {
@@ -170,9 +177,11 @@ export function ServerFormDialog({
         description: result.hostname ?? result.osInfo.slice(0, 120),
       });
     } catch (err) {
-      toast.error("Connection failed", {
-        description: String(err),
-      });
+      if (!reportHostKeyError(err)) {
+        toast.error("Connection failed", {
+          description: String(err),
+        });
+      }
     } finally {
       setTesting(false);
     }
@@ -183,7 +192,7 @@ export function ServerFormDialog({
     setSaving(true);
     try {
       const payload = buildInput();
-      await saveServer({
+      const saved = await saveServer({
         id: server?.id,
         name: payload.name,
         host: payload.host,
@@ -195,6 +204,7 @@ export function ServerFormDialog({
         password: payload.password,
         keyPassphrase: payload.keyPassphrase,
       });
+      onSaved?.(saved);
       toast.success(server ? "Server updated" : "Server added");
       onOpenChange(false);
     } catch (err) {

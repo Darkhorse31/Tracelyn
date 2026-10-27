@@ -89,6 +89,21 @@ impl ConfigStore {
         &self.config.servers
     }
 
+    /// Imports save as one operation. A failed write leaves the active config intact.
+    pub fn import_servers(&mut self, records: Vec<ServerRecord>) -> Result<(), ConfigError> {
+        let mut next = self.config.clone();
+        next.servers.extend(records);
+        if let Some(parent) = self.path.parent() { fs::create_dir_all(parent)?; }
+        let temporary = self.path.with_extension("import.tmp");
+        fs::write(&temporary, serde_json::to_string_pretty(&next)?)?;
+        if let Err(error) = fs::rename(&temporary, &self.path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(ConfigError::Io(error));
+        }
+        self.config = next;
+        Ok(())
+    }
+
     pub fn get_server(&self, id: &str) -> Result<&ServerRecord, ConfigError> {
         self.config
             .servers
@@ -200,4 +215,40 @@ impl ConfigStore {
 fn config_path() -> PathBuf {
     let base = dirs::data_local_dir().expect("local data dir");
     base.join("Tracelyn").join("config.json")
+}
+
+#[cfg(test)]
+mod import_tests {
+    use super::*;
+
+    fn profile(name: &str) -> ServerRecord {
+        ServerRecord { id: name.into(), name: name.into(), host: format!("{name}.example.com"), port: 22, username: "deploy".into(), auth_type: AuthType::Key, key_path: None, labels: vec!["production".into()] }
+    }
+
+    #[test]
+    fn bulk_import_preserves_existing_profiles_and_replaces_file() {
+        let directory = std::env::temp_dir().join(format!("tracelyn-import-{}", Uuid::new_v4()));
+        let path = directory.join("config.json");
+        let mut store = ConfigStore { path: path.clone(), config: AppConfig { servers: vec![profile("existing")], ..Default::default() } };
+        store.save().unwrap();
+        store.import_servers(vec![profile("first"), profile("second")]).unwrap();
+        let saved: AppConfig = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.servers.len(), 3);
+        assert_eq!(saved.servers[0].name, "existing");
+        assert_eq!(store.list_servers().len(), 3);
+        assert!(!path.with_extension("import.tmp").exists());
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn bulk_import_keeps_memory_unchanged_when_save_fails() {
+        let blocker = std::env::temp_dir().join(format!("tracelyn-import-blocker-{}", Uuid::new_v4()));
+        fs::write(&blocker, "not a directory").unwrap();
+        let mut store = ConfigStore { path: blocker.join("config.json"), config: AppConfig { servers: vec![profile("existing")], ..Default::default() } };
+        assert!(store.import_servers(vec![profile("new")]).is_err());
+        assert_eq!(store.list_servers().len(), 1);
+        assert_eq!(fs::read_to_string(&blocker).unwrap(), "not a directory");
+        fs::remove_file(blocker).unwrap();
+    }
 }

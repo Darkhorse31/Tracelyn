@@ -7,13 +7,14 @@ pub(crate) mod checks;
 pub(crate) mod cycle;
 pub(crate) mod logic;
 pub(crate) mod notify;
+pub(crate) mod policy;
 pub(crate) mod report;
 pub(crate) mod store;
 pub(crate) mod types;
 
-use crate::apps::types::AppMetrics;
+use crate::apps::types::{AppKind, AppMetrics, AppStatus, TracelynApp};
 use crate::state::{AppState, ConnectionStatus};
-use cycle::{LogObs, RestartObs, Sample};
+use cycle::{AppSignal, LogObs, RestartObs, Sample};
 use logic::digest_due;
 use notify::{build_jobs, deliver_job, Job};
 use parking_lot::Mutex;
@@ -74,7 +75,12 @@ fn live_sample(
             .or_insert(web.metrics.req_per_sec);
     }
     let apps = state.apps_for_server(server_id);
+    metrics.insert("server.connected".into(), if connected { 1.0 } else { 0.0 });
     fold_app_metrics(&mut metrics, &apps);
+    enrich_infra(app, server_id, &mut metrics);
+    let signals = app_signals(&apps);
+    let services = service_flags(&apps);
+    let (fail_count, login_lines) = auth_signals(app, server_id);
     let restarts: Vec<RestartObs> = apps
         .iter()
         .filter_map(|app_row| {
@@ -91,7 +97,7 @@ fn live_sample(
         store::list_rules(db.connection())
             .map_err(|e| e.to_string())?
             .iter()
-            .any(|rule| rule.enabled && rule.kind == "log_pattern")
+            .any(|rule| rule.enabled && matches!(rule.kind.as_str(), "log_pattern" | "new_error"))
     };
     let logs = if want_logs {
         recent_logs(&state, server_id)
@@ -100,6 +106,8 @@ fn live_sample(
     };
     let notices = {
         let db = state.metrics.lock();
+        migrate(db.connection()).map_err(|e| e.to_string())?;
+        store::seed_defaults(db.connection(), now_ms()).map_err(|e| e.to_string())?;
         let probes = HashMap::new();
         let sample = Sample {
             server_id,
@@ -108,6 +116,11 @@ fn live_sample(
             metrics: &metrics,
             logs: &logs,
             restarts: &restarts,
+            apps: &signals,
+            services: &services,
+            fail_count,
+            login_lines: login_lines.as_deref(),
+            utc_offset_secs: local_offset_secs(),
             probes: &probes,
             eval_metrics: connected,
             eval_logs: true,
@@ -119,12 +132,13 @@ fn live_sample(
         }
         out.notices
     };
+    refresh_tray(app);
     if notices.is_empty() {
         return Ok(());
     }
     let channels = channels_with_secrets(&state)?;
     for notice in notices {
-        let (jobs, errors) = build_jobs(&channels, &notice.title, &notice.body);
+        let (jobs, errors) = build_jobs(&channels, &notice.title, &notice.body, &notice.path);
         for err in errors {
             eprintln!("intel channel: {err}");
         }
@@ -133,7 +147,137 @@ fn live_sample(
     Ok(())
 }
 
-fn fold_app_metrics(metrics: &mut HashMap<String, f64>, apps: &[crate::apps::types::TracelynApp]) {
+fn refresh_tray(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let firing = {
+        let db = state.metrics.lock();
+        let intel: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM intel_rule_state WHERE firing = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        let host: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM alert_rule_state WHERE firing = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        intel.saturating_add(host)
+    };
+    let text = if firing == 0 {
+        "Tracelyn · all clear".to_string()
+    } else if firing == 1 {
+        "Tracelyn · 1 alert firing".to_string()
+    } else {
+        format!("Tracelyn · {firing} alerts firing")
+    };
+    if let Some(tray) = app.tray_by_id("status") {
+        let _ = tray.set_tooltip(Some(text));
+    }
+}
+
+fn local_offset_secs() -> i32 {
+    chrono::Local::now().offset().local_minus_utc()
+}
+
+fn app_signals(apps: &[TracelynApp]) -> Vec<AppSignal> {
+    apps.iter()
+        .take(200)
+        .map(|app| AppSignal {
+            id: app.id.clone(),
+            name: app.name.clone(),
+            crashed: app_crashed(app),
+            restarts: app.restarts.unwrap_or(0) as u64,
+            version: app_version(app),
+        })
+        .collect()
+}
+
+fn app_crashed(app: &TracelynApp) -> bool {
+    let oom = app.tags.iter().any(|tag| tag.eq_ignore_ascii_case("oom"));
+    match app.kind {
+        AppKind::Pm2 | AppKind::Docker => {
+            oom || matches!(app.status, AppStatus::Stopped | AppStatus::Errored)
+        }
+        AppKind::Systemd => oom || matches!(app.status, AppStatus::Errored),
+        _ => oom || matches!(app.status, AppStatus::Errored),
+    }
+}
+
+fn app_version(app: &TracelynApp) -> String {
+    match (&app.cwd, &app.interpreter) {
+        (Some(cwd), Some(bin)) if !cwd.is_empty() || !bin.is_empty() => format!("{cwd}|{bin}"),
+        (Some(cwd), None) if !cwd.is_empty() => cwd.clone(),
+        (None, Some(bin)) if !bin.is_empty() => bin.clone(),
+        _ => String::new(),
+    }
+}
+
+fn service_flags(apps: &[TracelynApp]) -> Vec<(String, bool)> {
+    let mut flags: Vec<(String, bool)> = Vec::new();
+    for app in apps {
+        let name = service_name(app);
+        let Some(name) = name else { continue };
+        let running = app.status == AppStatus::Online;
+        if let Some(slot) = flags.iter_mut().find(|(existing, _)| existing == &name) {
+            slot.1 |= running;
+        } else {
+            flags.push((name, running));
+        }
+    }
+    flags
+}
+
+fn service_name(app: &TracelynApp) -> Option<String> {
+    match app.kind {
+        AppKind::Nginx => Some("nginx".into()),
+        AppKind::Apache => Some("apache".into()),
+        _ => {
+            let name = app.name.to_ascii_lowercase();
+            if name.contains("mysql") || name.contains("mariadb") {
+                Some("mysql".into())
+            } else if name.contains("postgres") {
+                Some("postgres".into())
+            } else if name.contains("redis") {
+                Some("redis".into())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn enrich_infra(app: &AppHandle, server_id: &str, metrics: &mut HashMap<String, f64>) {
+    let infra = app.state::<crate::infra::InfraState>();
+    if let Some(days) = infra.minimum_number(server_id, "capacity", "daysUntilFull") {
+        metrics.insert("disk.forecast_days".into(), days);
+    }
+    if let Some(up) = infra.uptime_ok(server_id) {
+        metrics.insert("health.up".into(), if up { 1.0 } else { 0.0 });
+    }
+}
+
+fn auth_signals(app: &AppHandle, server_id: &str) -> (Option<u64>, Option<Vec<String>>) {
+    let infra = app.state::<crate::infra::InfraState>();
+    let fails = if infra.has_collector(server_id, "ssh_security") {
+        Some(infra.maximum_number(server_id, "ssh_security", "attempts").unwrap_or(0.0) as u64)
+    } else {
+        None
+    };
+    let lines = if infra.has_collector(server_id, "last_logins") {
+        Some(infra.field_strings(server_id, "last_logins", "session"))
+    } else {
+        None
+    };
+    (fails, lines)
+}
+
+fn fold_app_metrics(metrics: &mut HashMap<String, f64>, apps: &[TracelynApp]) {
     let mut error_rate: Option<f64> = None;
     let mut p95: Option<f64> = None;
     for app_row in apps {
@@ -210,7 +354,7 @@ pub fn spawn_scheduler(app: AppHandle) {
 fn flush_outbox(app: &AppHandle) {
     let jobs: Vec<Job> = outbox().lock().drain(..).collect();
     for job in jobs {
-        if let Err(err) = deliver_job(&job, &mut |title, body| show_notification(app, title, body)) {
+        if let Err(err) = deliver_job(&job, &mut |title, body, path| show_notification(app, title, body, path)) {
             eprintln!("intel deliver: {err}");
         }
     }
@@ -219,23 +363,24 @@ fn flush_outbox(app: &AppHandle) {
 pub fn deliver_now(app: &AppHandle, jobs: &[Job]) -> Vec<String> {
     let mut errors = Vec::new();
     for job in jobs {
-        if let Err(err) = deliver_job(job, &mut |title, body| show_notification(app, title, body)) {
+        if let Err(err) = deliver_job(job, &mut |title, body, path| show_notification(app, title, body, path)) {
             errors.push(err);
         }
     }
     errors
 }
 
-fn show_notification(app: &AppHandle, title: &str, body: &str) -> Result<(), String> {
+fn show_notification(app: &AppHandle, title: &str, body: &str, path: &str) -> Result<(), String> {
     app.notification()
         .builder()
         .title(title)
         .body(body)
+        .extra("path", path)
         .show()
         .map_err(|err| err.to_string())?;
     let _ = app.emit(
         "intel-notice",
-        serde_json::json!({ "title": title, "body": body }),
+        serde_json::json!({ "title": title, "body": body, "path": path }),
     );
     Ok(())
 }
@@ -260,7 +405,8 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
             let mut todo = Vec::new();
             for rule in rules.iter().filter(|rule| {
                 rule.enabled
-                    && matches!(rule.kind.as_str(), "ssl_expiry" | "uptime")
+                    && matches!(rule.kind.as_str(), "ssl_expiry" | "uptime" | "app_down")
+                    && (rule.kind != "app_down" || !rule.params.host.is_empty())
                     && rule.server_id.as_ref().map(|id| id == server_id).unwrap_or(true)
             }) {
                 let runtime = store::load_state(db.connection(), &rule.id, server_id).map_err(|e| e.to_string())?;
@@ -293,6 +439,8 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
         let restarts = restart_obs(&state, &server_id);
         let logs = recent_logs(&state, &server_id);
         let metrics = HashMap::new();
+        let no_apps = Vec::new();
+        let no_services = Vec::new();
         let db = state.metrics.lock();
         let sample = Sample {
             server_id: &server_id,
@@ -301,6 +449,11 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
             metrics: &metrics,
             logs: &logs,
             restarts: &restarts,
+            apps: &no_apps,
+            services: &no_services,
+            fail_count: None,
+            login_lines: None,
+            utc_offset_secs: local_offset_secs(),
             probes: &probes,
             eval_metrics: false,
             eval_logs: true,
@@ -312,7 +465,7 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
                 if !out.notices.is_empty() {
                     let channels = channels_with_secrets(&state)?;
                     for notice in out.notices {
-                        let (jobs, _) = build_jobs(&channels, &notice.title, &notice.body);
+                        let (jobs, _) = build_jobs(&channels, &notice.title, &notice.body, &notice.path);
                         enqueue(jobs);
                     }
                 }
@@ -387,7 +540,7 @@ fn send_due_digests(app: &AppHandle, state: &AppState, now: i64) -> Result<(), S
             store::upsert_digest(db.connection(), &digest).map_err(|e| e.to_string())?;
             continue;
         };
-        let (jobs, mut errors) = build_jobs(&[channel], &subject, &body);
+        let (jobs, mut errors) = build_jobs(&[channel], &subject, &body, "/alerts");
         errors.extend(deliver_now(app, &jobs));
         if errors.is_empty() {
             digest.last_sent_ms = Some(now);
@@ -418,14 +571,18 @@ pub fn run_for_server(
     );
     let apps = state.apps_for_server(server_id);
     let mut metrics = HashMap::new();
+    metrics.insert("server.connected".into(), if connected { 1.0 } else { 0.0 });
     fold_app_metrics(&mut metrics, &apps);
     if let Some(web) = state.event_hub.last_web_snapshot(server_id) {
         metrics.insert("web.req_per_sec".into(), web.metrics.req_per_sec);
     }
+    let signals = app_signals(&apps);
+    let services = service_flags(&apps);
     let restarts = restart_obs(state, server_id);
     let logs = recent_logs(state, server_id);
     let db = state.metrics.lock();
     migrate(db.connection()).map_err(|e| e.to_string())?;
+    store::seed_defaults(db.connection(), now_ms()).map_err(|e| e.to_string())?;
     let sample = Sample {
         server_id,
         server_name: &server_name,
@@ -433,6 +590,11 @@ pub fn run_for_server(
         metrics: &metrics,
         logs: &logs,
         restarts: &restarts,
+        apps: &signals,
+        services: &services,
+        fail_count: None,
+        login_lines: None,
+        utc_offset_secs: local_offset_secs(),
         probes,
         eval_metrics: connected || !metrics.is_empty(),
         eval_logs: true,

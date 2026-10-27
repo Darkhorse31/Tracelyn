@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts",
+    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

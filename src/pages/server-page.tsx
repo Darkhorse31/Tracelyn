@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
 import { InfraSummaryCard } from "@/components/infra/summary-card";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
@@ -16,7 +17,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Masked } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { useTimeRange } from "@/contexts/time-range-context";
+import { useCollectorBanner } from "@/hooks/use-collector-banner";
 import { useServerMetrics } from "@/hooks/use-server-metrics";
+import { COLLECTOR_BANNER_TEXT, plainCollectorText } from "@/lib/collector-banner";
 import { cn } from "cn";
 
 const CHART_HEIGHT = 180;
@@ -50,13 +53,51 @@ function ServiceState({ active, state }: { active: boolean; state: string }) {
   );
 }
 
+function CollectorBanner({
+  error,
+  collectorName,
+  pending,
+  onRetry,
+}: {
+  error: string;
+  collectorName: string | null;
+  pending: boolean;
+  onRetry: () => void;
+}) {
+  const name = plainCollectorText(collectorName || "system");
+  const detail = plainCollectorText(error);
+  return (
+    <Notice
+      tone="warning"
+      title={COLLECTOR_BANNER_TEXT}
+      action={
+        <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onRetry}>
+          {pending ? "Retrying" : "Retry"}
+        </Button>
+      }
+    >
+      <details className="text-foreground">
+        <summary className="cursor-pointer rounded-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Details
+        </summary>
+        <div className="mt-2 space-y-1">
+          <p>Collector: {name}</p>
+          <p className="break-words font-mono text-xs">{detail}</p>
+        </div>
+      </details>
+    </Notice>
+  );
+}
+
 export function ServerPage() {
-  const { servers, statusById, selectedServerId } = useServersContext();
+  const { servers, statusById, selectedServerId, connect } = useServersContext();
   const server = servers.find((s) => s.id === selectedServerId);
   const status = selectedServerId ? statusById.get(selectedServerId) : undefined;
   const connected = status?.status === "connected" || status?.status === "degraded";
   const { isLive } = useTimeRange();
   const { snapshot, waiting } = useServerMetrics(selectedServerId, connected || !isLive);
+  const banner = useCollectorBanner(isLive ? snapshot : null);
+  const [retrying, setRetrying] = useState(false);
 
   if (!server) {
     return (
@@ -114,12 +155,18 @@ export function ServerPage() {
         </Notice>
       )}
       {isLive && status?.status === "degraded" && (
-        <Notice tone="warning">Connection is degraded; updates may be delayed.</Notice>
+        <Notice tone="warning">Connection is degraded. Updates may be delayed.</Notice>
       )}
-      {snapshot?.collectorError && (
-        <Notice tone="warning" title="Collector warning">
-          {snapshot.collectorError}
-        </Notice>
+      {banner.show && banner.error && (
+        <CollectorBanner
+          error={banner.error}
+          collectorName={banner.collectorName}
+          pending={retrying}
+          onRetry={() => {
+            setRetrying(true);
+            void connect(server.id).finally(() => setRetrying(false));
+          }}
+        />
       )}
 
       {loading ? (

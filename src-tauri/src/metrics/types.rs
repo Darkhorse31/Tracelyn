@@ -76,4 +76,9 @@ pub struct ServerMetricsSnapshot {
     pub services: Vec<ServiceRow>,
     pub ss_summary: SsSummary,
     pub collector_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector_name: Option<String>,
+    /// Consecutive failed system polls. Zero means the last poll succeeded.
+    #[serde(default)]
+    pub collector_failures: u32,
 }

@@ -231,7 +231,7 @@ export function OtelSetup({ serverId, appId }: { serverId: string; appId: string
                 Copy
               </Button>
             </div>
-            <pre className="max-h-40 overflow-auto border-t border-border bg-muted/40 p-3 font-mono text-xs">
+            <pre tabIndex={0} className="max-h-40 overflow-auto border-t border-border bg-muted/40 p-3 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {snippet.text}
             </pre>
           </div>

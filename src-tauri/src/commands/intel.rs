@@ -79,6 +79,7 @@ pub struct ReportQuery {
 pub fn intel_list_rules(state: State<AppState>) -> Result<Vec<IntelRule>, String> {
     db_migrate(&state)?;
     let db = state.metrics.lock();
+    store::seed_defaults(db.connection(), now_ms()).map_err(err)?;
     store::list_rules(db.connection()).map_err(err)
 }
 
@@ -120,7 +121,7 @@ pub fn intel_evaluate(app: AppHandle, state: State<AppState>, server_id: String)
             store::list_channels(db.connection()).map_err(err)?
         };
         for notice in &out.notices {
-            let (jobs, build_errors) = build_jobs(&channels, &notice.title, &notice.body);
+            let (jobs, build_errors) = build_jobs(&channels, &notice.title, &notice.body, &notice.path);
             errors.extend(build_errors);
             errors.extend(deliver_now(&app, &jobs));
         }
@@ -223,7 +224,7 @@ pub fn intel_test_channel(app: AppHandle, state: State<AppState>, id: String) ->
         "Test notification from channel {}. If you can read this, delivery works.",
         channel.name
     );
-    let (jobs, mut errors) = build_jobs(std::slice::from_ref(&channel), title, &body);
+    let (jobs, mut errors) = build_jobs(std::slice::from_ref(&channel), title, &body, "/alerts");
     if jobs.is_empty() {
         return Err(errors.join(". "));
     }
@@ -270,6 +271,48 @@ pub fn intel_ack_incident(state: State<AppState>, id: String) -> Result<(), Stri
 #[tauri::command]
 pub fn intel_resolve_incident(state: State<AppState>, id: String) -> Result<(), String> {
     set_status(&state, &id, "resolved", "Resolved")
+}
+
+#[tauri::command]
+pub fn intel_snooze_incident(state: State<AppState>, id: String, minutes: u64) -> Result<(), String> {
+    if !matches!(minutes, 15 | 60 | 1440) {
+        return Err("Snooze for 15 minutes, 1 hour, or 1 day".into());
+    }
+    db_migrate(&state)?;
+    let until = now_ms() + minutes as i64 * 60_000;
+    let db = state.metrics.lock();
+    store::snooze_incident(db.connection(), &id, until).map_err(err)?;
+    store::add_timeline(db.connection(), &id, now_ms(), "audit", &format!("Snoozed for {minutes} minutes")).map_err(err)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn intel_unread_count(state: State<AppState>) -> Result<i64, String> {
+    db_migrate(&state)?;
+    let db = state.metrics.lock();
+    store::seed_defaults(db.connection(), now_ms()).map_err(err)?;
+    store::unread_count(db.connection()).map_err(err)
+}
+
+#[tauri::command]
+pub fn intel_mark_alerts_read(state: State<AppState>) -> Result<(), String> {
+    db_migrate(&state)?;
+    let db = state.metrics.lock();
+    store::mark_alerts_read(db.connection()).map_err(err)
+}
+
+#[tauri::command]
+pub fn intel_sound_enabled(state: State<AppState>) -> Result<bool, String> {
+    db_migrate(&state)?;
+    let db = state.metrics.lock();
+    store::sound_enabled(db.connection()).map_err(err)
+}
+
+#[tauri::command]
+pub fn intel_set_sound(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    db_migrate(&state)?;
+    let db = state.metrics.lock();
+    store::meta_set(db.connection(), "sound", if enabled { "1" } else { "0" }).map_err(err)
 }
 
 fn set_status(state: &AppState, id: &str, status: &str, message: &str) -> Result<(), String> {
@@ -658,7 +701,7 @@ pub fn intel_send_digest(app: AppHandle, state: State<AppState>, id: String) -> 
         store::upsert_digest(db.connection(), &digest).map_err(err)?;
         (digest, subject, body, channel)
     };
-    let (jobs, mut errors) = build_jobs(std::slice::from_ref(&channel), &subject, &body);
+    let (jobs, mut errors) = build_jobs(std::slice::from_ref(&channel), &subject, &body, "/alerts");
     errors.extend(deliver_now(&app, &jobs));
     let db = state.metrics.lock();
     let mut digest = digest;
@@ -694,6 +737,17 @@ fn validate_rule(rule: &IntelRule) -> Result<(), String> {
     }
     if rule.params.duration_secs > 7 * 86_400 || rule.params.clear_duration_secs > 7 * 86_400 {
         return Err("duration is too long".into());
+    }
+    if rule.params.cooldown_secs > 7 * 86_400 {
+        return Err("cooldown is too long".into());
+    }
+    if let (Some(start), Some(end)) = (rule.params.quiet_start_min, rule.params.quiet_end_min) {
+        if start > 1439 || end > 1439 {
+            return Err("quiet hours use minutes from midnight, from 0 to 1439".into());
+        }
+    }
+    if rule.params.app_id.chars().count() > 80 {
+        return Err("app id is too long".into());
     }
     if rule.kind == "log_pattern" {
         if rule.params.pattern.is_empty() || rule.params.pattern.len() > 200 {

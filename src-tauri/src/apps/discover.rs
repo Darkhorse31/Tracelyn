@@ -58,7 +58,7 @@ pub async fn discover_apps(
 
     if let Ok(docker) = run_remote(
         session,
-        "sudo -n docker ps --format '{{json .}}' 2>/dev/null || docker ps --format '{{json .}}' 2>/dev/null",
+        "sudo -n docker ps -a --filter status=running --filter status=exited --filter status=dead --format '{{json .}}' 2>/dev/null || docker ps -a --filter status=running --filter status=exited --filter status=dead --format '{{json .}}' 2>/dev/null",
     )
     .await
     {

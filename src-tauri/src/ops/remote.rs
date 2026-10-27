@@ -1,6 +1,6 @@
 use crate::config::ServerRecord;
 use crate::ops::plan::{needs_sudo_stdin, redact};
-use crate::ssh::{connect_persistent, HostKeyStore, SshSession};
+use crate::ssh::{connect_persistent, HostKeyStore, SshChannel, SshSession};
 use base64::Engine;
 use russh::ChannelMsg;
 use std::collections::HashMap;
@@ -63,7 +63,7 @@ impl OpsRuntime {
         host_keys: Arc<Mutex<HostKeyStore>>,
     ) -> Result<Arc<Mutex<SshSession>>, String> {
         if let Some(existing) = self.inner.sessions.lock().await.get(&server.id).cloned() {
-            if !existing.lock().await.is_closed() {
+            if !existing.lock().await.is_closed().await {
                 return Ok(existing);
             }
         }
@@ -73,7 +73,7 @@ impl OpsRuntime {
         let arc = Arc::new(Mutex::new(fresh));
         let mut map = self.inner.sessions.lock().await;
         if let Some(existing) = map.get(&server.id).cloned() {
-            if !existing.lock().await.is_closed() {
+            if !existing.lock().await.is_closed().await {
                 return Ok(existing);
             }
         }
@@ -315,7 +315,7 @@ async fn pump_terminal(
     app: AppHandle,
     inner: Arc<Inner>,
     tab_id: String,
-    mut channel: russh::Channel<russh::client::Msg>,
+    mut channel: SshChannel,
     mut rx: mpsc::Receiver<TermCmd>,
 ) {
     loop {

@@ -118,4 +118,6 @@ export interface ServerMetricsSnapshot {
   services: ServiceRow[];
   ssSummary: SsSummary;
   collectorError?: string | null;
+  collectorName?: string | null;
+  collectorFailures?: number | null;
 }

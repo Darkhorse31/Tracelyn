@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Link } from "react-router-dom";
 import { Boxes, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -47,10 +48,11 @@ export function AppsPage() {
     selectedServerId &&
     ["connected", "degraded"].includes(statusById.get(selectedServerId)?.status ?? "");
   const { apps, loading, error } = useApps();
-  const [query, setQuery] = useState("");
-  const [groupBy, setGroupBy] = useState<GroupBy>("kind");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortAsc, setSortAsc] = useState(true);
+  const scope = `apps:${selectedServerId ?? "none"}`;
+  const [query, setQuery] = useRememberedState(`${scope}:query`, "");
+  const [groupBy, setGroupBy] = useRememberedState<GroupBy>(`${scope}:group`, "kind");
+  const [sortKey, setSortKey] = useRememberedState<SortKey>(`${scope}:sort`, "name");
+  const [sortAsc, setSortAsc] = useRememberedState(`${scope}:ascending`, true);
   const [selected, setSelected] = useState<string[]>([]);
   const [editing, setEditing] = useState<TracelynApp | null>(null);
   const [open, setOpen] = useState(false);

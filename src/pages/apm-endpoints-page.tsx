@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Link } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -250,7 +251,7 @@ export function ApmEndpointsPage() {
     timingNotice,
     loading,
   } = useApmEndpoints(selectedServerId);
-  const [chosenRoute, setChosenRoute] = useState<string>();
+  const [chosenRoute, setChosenRoute] = useRememberedState(`apm:${selectedServerId ?? "none"}:route`, "");
 
   if (!selectedServerId) {
     return (

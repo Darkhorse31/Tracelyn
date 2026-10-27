@@ -259,7 +259,13 @@ impl SystemCollectorState {
         }
     }
 
-    pub fn snapshot(&self, server_id: &str, collector_error: Option<String>) -> ServerMetricsSnapshot {
+    pub fn snapshot(
+        &self,
+        server_id: &str,
+        collector_error: Option<String>,
+        collector_name: Option<String>,
+        collector_failures: u32,
+    ) -> ServerMetricsSnapshot {
         let t = Self::now_ms();
         ServerMetricsSnapshot {
             server_id: server_id.to_string(),
@@ -286,6 +292,8 @@ impl SystemCollectorState {
             services: self.services.clone(),
             ss_summary: self.ss_summary.clone(),
             collector_error,
+            collector_name,
+            collector_failures,
         }
     }
 }

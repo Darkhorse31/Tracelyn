@@ -1,0 +1,87 @@
+[
+  {
+    "name": "SSH aliases with inherited defaults and a jump host",
+    "kind": "ssh",
+    "input": "Host api api-copy\n HostName=api.example.com\n User deploy\n Port 2222\n IdentityFile \"~/.ssh/my key\" # note\nHost * !api-copy\n ProxyJump gateway\nHost *\n User fallback\n",
+    "servers": [
+      {
+        "name": "api",
+        "host": "api.example.com",
+        "port": 2222,
+        "username": "deploy",
+        "authType": "key",
+        "keyPath": "/home/me/.ssh/my key",
+        "labels": [],
+        "proxyJump": "gateway",
+        "issues": [
+          "ProxyJump is not supported yet. Use a directly reachable host"
+        ]
+      },
+      {
+        "name": "api-copy",
+        "host": "api.example.com",
+        "port": 2222,
+        "username": "deploy",
+        "authType": "key",
+        "keyPath": "/home/me/.ssh/my key",
+        "labels": [],
+        "proxyJump": null,
+        "issues": []
+      }
+    ]
+  },
+  {
+    "name": "Case insensitive keywords and default SSH user",
+    "kind": "ssh",
+    "input": "host alpha\n hostname alpha.example.com\n identityfile %d/.ssh/%r-%h-%p\nHost ALPHA\n User me\n",
+    "servers": [
+      {
+        "name": "alpha",
+        "host": "alpha.example.com",
+        "port": 22,
+        "username": "me",
+        "authType": "key",
+        "keyPath": "/home/me/.ssh/me-alpha.example.com-22",
+        "labels": [],
+        "proxyJump": null,
+        "issues": []
+      }
+    ]
+  },
+  {
+    "name": "SSH equals separators, quoted comments, and literal equals in paths",
+    "kind": "ssh",
+    "input": "Host = odd\n HostName =odd.example.com\n User= deploy\n Port = 2222\n IdentityFile = \"C:\\keys\\my#key=name\" # comment\n ProxyJump = none\n",
+    "servers": [
+      {
+        "name": "odd",
+        "host": "odd.example.com",
+        "port": 2222,
+        "username": "deploy",
+        "authType": "key",
+        "keyPath": "C:\\keys\\my#key=name",
+        "labels": [],
+        "proxyJump": "none",
+        "issues": []
+      }
+    ]
+  },
+  {
+    "name": "CSV quoted commas and labels",
+    "kind": "csv",
+    "input": "\ufeffname,host,username,port,authType,keyPath,labels\r\n\"West, primary\",vps.example.com,deploy,2222,key,C:\\keys\\id_ed25519,prod|web\r\n",
+    "servers": [
+      {
+        "name": "West, primary",
+        "host": "vps.example.com",
+        "port": 2222,
+        "username": "deploy",
+        "authType": "key",
+        "keyPath": "C:\\keys\\id_ed25519",
+        "labels": ["prod", "web"],
+        "proxyJump": null,
+        "issues": []
+      }
+    ]
+  }
+]

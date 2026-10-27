@@ -12,6 +12,8 @@ import { HowToFix } from "@/components/setup/how-to-fix";
 import { Notice } from "@/components/status/notice";
 import type { Resource, Snapshot } from "./api";
 import { cn } from "@/lib/utils";
+import { useRememberedState } from "@/hooks/use-remembered-state";
+import { useServersContext } from "@/contexts/servers-context";
 
 export interface Column {
   key: string;
@@ -140,7 +142,8 @@ export function ResourcePanel({
   columns: Column[];
   children?: React.ReactNode;
 }) {
-  const [query, setQuery] = useState("");
+  const { selectedServerId } = useServersContext();
+  const [query, setQuery] = useRememberedState(`infra:${selectedServerId ?? "none"}:${title}:query`, "");
   const [page, setPage] = useState(0);
   const rows = useMemo(
     () =>

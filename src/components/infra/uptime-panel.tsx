@@ -22,6 +22,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [url, setUrl] = useState("");
   const [interval, setIntervalValue] = useState(60);
+  const [allowSelfSigned, setAllowSelfSigned] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [selected, setSelected] = useState("");
   const [domainQuery, setDomainQuery] = useState("");
@@ -71,6 +72,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
       url: value,
       intervalSeconds: interval,
       enabled: true,
+      allowSelfSigned,
     });
     setSelected(check.id);
     setUrl("");
@@ -134,10 +136,22 @@ export function UptimePanel({ serverId }: { serverId: string }) {
               onChange={(e) => setIntervalValue(Number(e.target.value))}
             />
           </div>
+          <label className="flex items-center gap-2 pb-2 text-sm" htmlFor="uptime-self-signed">
+            <input
+              id="uptime-self-signed"
+              type="checkbox"
+              checked={allowSelfSigned}
+              onChange={(e) => setAllowSelfSigned(e.target.checked)}
+            />
+            Allow self-signed certificate
+          </label>
           <Button type="submit" disabled={busy !== null}>
             {busy === "add" ? "Adding…" : "Add check"}
           </Button>
         </form>
+        <p className="text-xs text-muted-foreground">
+          HTTPS checks verify the certificate. Turn on the option only for a host you trust with a private certificate.
+        </p>
         {domains.length > 0 ? (
           <details className="rounded-lg border border-border p-3">
             <summary className="cursor-pointer text-sm font-medium">

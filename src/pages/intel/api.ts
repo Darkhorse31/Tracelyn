@@ -66,6 +66,26 @@ export function addIncidentNote(id: string, text: string): Promise<void> {
   return invoke("intel_add_incident_note", { id, text });
 }
 
+export function snoozeIncident(id: string, minutes: 15 | 60 | 1440): Promise<void> {
+  return invoke("intel_snooze_incident", { id, minutes });
+}
+
+export function unreadAlertCount(): Promise<number> {
+  return invoke("intel_unread_count");
+}
+
+export function markAlertsRead(): Promise<void> {
+  return invoke("intel_mark_alerts_read");
+}
+
+export function alertSoundEnabled(): Promise<boolean> {
+  return invoke("intel_sound_enabled");
+}
+
+export function setAlertSound(enabled: boolean): Promise<void> {
+  return invoke("intel_set_sound", { enabled });
+}
+
 export function anomalySeries(
   serverId: string,
   metricKey: string,

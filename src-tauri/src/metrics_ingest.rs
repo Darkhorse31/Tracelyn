@@ -8,7 +8,6 @@ use crate::storage::{run_maintenance, RawSample};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -99,15 +98,6 @@ pub fn evaluate_live_alerts(
         Ok(outcome) => {
             for transition in outcome.transitions {
                 let _ = app.emit("alert-transition", &transition);
-                if !transition.fired {
-                    continue;
-                }
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title("Tracelyn alert")
-                    .body(&transition.message)
-                    .show();
             }
         }
         Err(err) => eprintln!("alert evaluate: {}", err),

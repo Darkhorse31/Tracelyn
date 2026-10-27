@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useServersContext } from "@/contexts/servers-context";
 import { opsExportAudit, opsListAudit } from "@/lib/ops-api";
 import type { AuditRow } from "@/lib/ops-types";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 
 function localInputToMs(value: string): number | undefined {
   if (!value) return undefined;
@@ -22,11 +23,11 @@ function localInputToMs(value: string): number | undefined {
 export function AuditPage() {
   const id = useId();
   const { servers } = useServersContext();
-  const [serverId, setServerId] = useState("");
-  const [target, setTarget] = useState("");
-  const [since, setSince] = useState("");
-  const [until, setUntil] = useState("");
-  const [failedOnly, setFailedOnly] = useState(false);
+  const [serverId, setServerId] = useRememberedState("audit:server", "");
+  const [target, setTarget] = useRememberedState("audit:target", "");
+  const [since, setSince] = useRememberedState("audit:since", "");
+  const [until, setUntil] = useRememberedState("audit:until", "");
+  const [failedOnly, setFailedOnly] = useRememberedState("audit:failed-only", false);
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Globe } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytesPerSec } from "@/components/charts/metric-uplot";
@@ -73,13 +74,14 @@ export function WebTrafficPage() {
   const { isLive } = useTimeRange();
   const { metrics, logs, loading, permissionDenied, webDetected } =
     useWebTraffic(selectedServerId);
-  const [pathQuery, setPathQuery] = useState("");
-  const [ipQuery, setIpQuery] = useState("");
-  const [textQuery, setTextQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const scope = `web:${selectedServerId ?? "none"}`;
+  const [pathQuery, setPathQuery] = useRememberedState(`${scope}:path`, "");
+  const [ipQuery, setIpQuery] = useRememberedState(`${scope}:ip`, "");
+  const [textQuery, setTextQuery] = useRememberedState(`${scope}:text`, "");
+  const [statusFilter, setStatusFilter] = useRememberedState<StatusFilter>(`${scope}:status`, "all");
 
   const filtered = useMemo(() => {
-    const [statusMin, statusMax] = STATUS_FILTERS[statusFilter];
+    const [statusMin, statusMax] = STATUS_FILTERS[statusFilter] ?? STATUS_FILTERS.all;
     return filterWebLogs(logs, { pathQuery, ipQuery, textQuery, statusMin, statusMax });
   }, [logs, pathQuery, ipQuery, textQuery, statusFilter]);
 
