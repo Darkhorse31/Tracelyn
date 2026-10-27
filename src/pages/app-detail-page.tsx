@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import { useApps } from "@/hooks/use-apps";
 import { cn } from "@/lib/utils";
 
@@ -144,7 +145,7 @@ export function AppDetailPage() {
                     {app.logSources.map((src) => (
                       <li key={src.id}>
                         <span className="font-medium">{src.kind}</span>
-                        <span className="text-muted-foreground"> {src.path || src.containerId || src.vhost}</span>
+                        <span className="text-muted-foreground"> <Masked text={src.path || src.containerId || src.vhost || ""} /></span>
                         {src.fixHint && (
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <p className="text-xs text-status-warning">{src.fixHint}</p>

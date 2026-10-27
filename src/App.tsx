@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { InfraPage, SECTIONS, type Section } from "@/pages/infra/infra-page";
+import { PrivacyProvider } from "@/contexts/privacy-context";
 import { ServersProvider } from "@/contexts/servers-context";
 import { AppDetailPage } from "@/pages/app-detail-page";
 import { AppsPage } from "@/pages/apps-page";
@@ -27,6 +28,7 @@ import { WebTrafficPage } from "@/pages/web-traffic-page";
 function App() {
   return (
     <ServersProvider>
+      <PrivacyProvider>
       <BrowserRouter>
         <Routes>
           <Route element={<AppShell />}>
@@ -58,6 +60,7 @@ function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </PrivacyProvider>
     </ServersProvider>
   );
 }

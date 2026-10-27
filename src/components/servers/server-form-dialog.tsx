@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Masked, SecretInput, usePrivacy } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -46,6 +47,7 @@ export function ServerFormDialog({
   server,
 }: ServerFormDialogProps) {
   const { saveServer, testConnection } = useServersContext();
+  const { enabled, field } = usePrivacy();
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState(String(defaultPort));
@@ -225,8 +227,9 @@ export function ServerFormDialog({
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="server-host">Host</Label>
-              <Input
+              <SecretInput
                 id="server-host"
+                kind="host"
                 value={host}
                 onChange={(e) => setHost(e.target.value)}
                 placeholder="203.0.113.10"
@@ -235,8 +238,9 @@ export function ServerFormDialog({
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="server-port">Port</Label>
-              <Input
+              <SecretInput
                 id="server-port"
+                kind="port"
                 type="number"
                 min={1}
                 max={65535}
@@ -247,8 +251,9 @@ export function ServerFormDialog({
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">
               <Label htmlFor="server-user">Username</Label>
-              <Input
+              <SecretInput
                 id="server-user"
+                kind="user"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="font-mono"
@@ -274,8 +279,9 @@ export function ServerFormDialog({
                 <div className="flex flex-col gap-2 sm:col-span-2">
                   <Label htmlFor="server-key-path">Private key path</Label>
                   <div className="flex gap-2">
-                    <Input
+                    <SecretInput
                       id="server-key-path"
+                      kind="path"
                       value={keyPath}
                       onChange={(e) => {
                         setKeyPath(e.target.value);
@@ -296,24 +302,29 @@ export function ServerFormDialog({
                     id="server-key-pick"
                     value={detectedKeys.includes(keyPath) ? keyPath : ""}
                     placeholder={
-                      detectedKeys.length ? `Keys in ${sshDir || ".ssh"}` : "No keys found in .ssh"
+                      enabled
+                        ? "Detected keys"
+                        : detectedKeys.length
+                          ? `Keys in ${sshDir || ".ssh"}`
+                          : "No keys found in .ssh"
                     }
                     onValueChange={(next) => {
                       setKeyPath(next);
                       void checkKey(next);
                     }}
-                    options={detectedKeys.map((file) => ({ value: file, label: file }))}
+                    options={detectedKeys.map((file) => ({ value: file, label: field(file, "path") }))}
                   />
                   {keyMessage && (
                     <p id="server-key-error" role="alert" className="text-xs text-status-critical">
-                      {keyMessage}
+                      <Masked text={keyMessage} />
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-2 sm:col-span-2">
                   <Label htmlFor="server-passphrase">Key passphrase (optional)</Label>
-                  <Input
+                  <SecretInput
                     id="server-passphrase"
+                    kind="secret"
                     type="password"
                     value={keyPassphrase}
                     onChange={(e) => setKeyPassphrase(e.target.value)}
@@ -324,8 +335,9 @@ export function ServerFormDialog({
             ) : (
               <div className="flex flex-col gap-2 sm:col-span-2">
                 <Label htmlFor="server-password">Password</Label>
-                <Input
+                <SecretInput
                   id="server-password"
+                  kind="secret"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

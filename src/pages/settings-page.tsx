@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked, PrivacyToggle } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import type { ServerRecord } from "@/lib/types";
 
@@ -54,8 +55,14 @@ export function SettingsPage() {
             the window title bar.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <ThemeRadioGroup />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-md text-sm text-muted-foreground">
+              Privacy mode hides addresses, usernames, keys, and secrets on screen and in copied text. Shortcut Ctrl+Shift+P.
+            </p>
+            <PrivacyToggle />
+          </div>
         </CardContent>
       </Card>
       <OperationsModeCard />
@@ -87,7 +94,7 @@ export function SettingsPage() {
                 <div className="min-w-0">
                   <p className="font-medium">{server.name}</p>
                   <p className="font-mono text-xs text-muted-foreground">
-                    {server.username}@{server.host}:{server.port}
+                    <Masked text={`${server.username}@${server.host}:${server.port}`} />
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

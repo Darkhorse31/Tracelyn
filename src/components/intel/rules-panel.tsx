@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Masked, SecretInput } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -137,7 +138,14 @@ export function RulesPanel() {
                       {rule.params.clearDurationSecs}s
                       {rule.params.metricKey ? ` · ${rule.params.metricKey}` : ""}
                       {rule.params.pattern ? ` · /${rule.params.pattern}/` : ""}
-                      {rule.params.host ? ` · ${rule.params.host}:${rule.params.port}` : ""}
+                      {rule.params.host ? (
+                        <>
+                          {" · "}
+                          <Masked text={`${rule.params.host}:${rule.params.port}`} />
+                        </>
+                      ) : (
+                        ""
+                      )}
                     </p>
                   </div>
                   <SeverityBadge severity={rule.severity} />
@@ -326,8 +334,9 @@ function RuleDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label htmlFor={`${formId}-host`}>Host</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-host`}
+                  kind="host"
                   value={draft.params.host}
                   onChange={(e) => setDraft({ ...draft, params: { ...draft.params, host: e.target.value } })}
                   autoComplete="off"
@@ -335,13 +344,14 @@ function RuleDialog({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${formId}-port`}>Port</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-port`}
+                  kind="port"
                   type="number"
                   min={1}
                   max={65535}
                   className="font-mono"
-                  value={draft.params.port}
+                  value={String(draft.params.port ?? "")}
                   onChange={(e) => setDraft({ ...draft, params: { ...draft.params, port: Number(e.target.value) } })}
                 />
               </div>

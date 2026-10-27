@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/status/notice";
+import { Masked } from "@/contexts/privacy-context";
 import { getInsightSetup, setOtelPaths } from "@/lib/api";
 import type { InsightSetup } from "@/lib/insight-types";
 
@@ -146,7 +147,7 @@ export function OtelSetup({ serverId, appId }: { serverId: string; appId: string
           <ul className="mt-2 flex flex-col gap-1">
             {paths.map((item) => (
               <li key={item} className="flex items-center justify-between gap-2 text-sm">
-                <span className="truncate font-mono">{item}</span>
+                <span className="truncate font-mono"><Masked text={item} /></span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -168,7 +169,7 @@ export function OtelSetup({ serverId, appId }: { serverId: string; appId: string
             {suggestions.map((item) => (
               <li key={`${item.appId}-${item.path}`} className="flex items-start justify-between gap-3 text-sm">
                 <span>
-                  <span className="font-mono">{item.path}</span>
+                  <span className="font-mono"><Masked text={item.path} /></span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">{item.reason}</span>
                 </span>
                 <Button

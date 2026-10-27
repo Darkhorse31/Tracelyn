@@ -61,6 +61,12 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_spans_time ON spans (server_id, start_ms);
         CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans (server_id, trace_id);
+        CREATE TABLE IF NOT EXISTS file_cursors (
+            server_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            offset INTEGER NOT NULL,
+            PRIMARY KEY (server_id, path)
+        );
         CREATE TABLE IF NOT EXISTS otel_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             server_id TEXT NOT NULL,
@@ -105,6 +111,10 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         );
         ",
     )?;
+    let _ = conn.execute(
+        "ALTER TABLE otel_paths ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+        [],
+    );
     Ok(())
 }
 
@@ -692,13 +702,66 @@ pub fn set_otel_paths(conn: &Connection, server_id: &str, app_id: &str, paths: &
         "DELETE FROM otel_paths WHERE server_id = ?1 AND app_id = ?2",
         params![server_id, app_id],
     )?;
-    let mut stmt = tx.prepare("INSERT INTO otel_paths (server_id, app_id, path) VALUES (?1, ?2, ?3)")?;
+    let mut stmt = tx.prepare(
+        "INSERT INTO otel_paths (server_id, app_id, path, source) VALUES (?1, ?2, ?3, 'manual')",
+    )?;
     for path in paths {
         stmt.execute(params![server_id, app_id, path])?;
     }
     drop(stmt);
     tx.commit()?;
     Ok(())
+}
+
+pub fn adopt_otel_paths(conn: &Connection, server_id: &str, paths: &[String]) -> Result<(), rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO otel_paths (server_id, app_id, path, source) VALUES (?1, '', ?2, 'auto')",
+    )?;
+    for path in paths.iter().take(40) {
+        if crate::insight::detect::validate_log_path(path).is_ok() {
+            stmt.execute(params![server_id, path])?;
+        }
+    }
+    Ok(())
+}
+
+pub fn file_offset(conn: &Connection, server_id: &str, path: &str) -> Result<u64, rusqlite::Error> {
+    let offset = conn
+        .query_row(
+            "SELECT offset FROM file_cursors WHERE server_id = ?1 AND path = ?2",
+            params![server_id, path],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .unwrap_or(0);
+    Ok(offset.max(0) as u64)
+}
+
+pub fn save_file_offset(conn: &Connection, server_id: &str, path: &str, offset: u64) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO file_cursors (server_id, path, offset) VALUES (?1, ?2, ?3)
+         ON CONFLICT(server_id, path) DO UPDATE SET offset = excluded.offset",
+        params![server_id, path, offset as i64],
+    )?;
+    Ok(())
+}
+
+pub fn merge_otel_report(conn: &Connection, server_id: &str, report: &crate::insight::model::OtelReport) -> Result<(), rusqlite::Error> {
+    let mut stats = load_stats(conn, server_id);
+    stats.reason = report.reason.clone();
+    stats.detail = report.detail.clone();
+    stats.sample = report.sample.clone();
+    stats.collector = report.collector.clone();
+    stats.last_write = report.last_write.clone();
+    save_stats(conn, server_id, &stats)
+}
+
+fn load_stats(conn: &Connection, server_id: &str) -> OtelStats {
+    get_meta(conn, server_id, "otel_stats")
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
 }
 
 pub fn set_slow_path(conn: &Connection, server_id: &str, engine: &str, path: &str) -> Result<(), rusqlite::Error> {

@@ -5,6 +5,7 @@ import { Waterfall, formatDur } from "@/components/traces/waterfall";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { getTrace } from "@/lib/api";
 import type { TraceDetail } from "@/lib/insight-types";
@@ -84,7 +85,7 @@ export function TraceDetailPage() {
           <h3 className="text-sm font-semibold">{span.operation}</h3>
           <dl className="mt-3 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">
             <dt className="text-muted-foreground">Service</dt>
-            <dd>{span.service}</dd>
+            <dd><Masked text={span.service} /></dd>
             <dt className="text-muted-foreground">Status</dt>
             <dd>{span.status}{span.critical ? " · critical path" : ""}</dd>
             <dt className="text-muted-foreground">Kind</dt>
@@ -94,7 +95,7 @@ export function TraceDetailPage() {
             {span.peer && (
               <>
                 <dt className="text-muted-foreground">Peer</dt>
-                <dd>{span.peer}</dd>
+                <dd><Masked text={span.peer} /></dd>
               </>
             )}
           </dl>
@@ -117,7 +118,7 @@ export function TraceDetailPage() {
             {Object.entries(span.attributes ?? {}).map(([key, value]) => (
               <div key={key} className="contents">
                 <dt className="truncate text-muted-foreground">{key}</dt>
-                <dd className="truncate font-mono">{textOf(value)}</dd>
+                <dd className="truncate font-mono"><Masked text={textOf(value)} /></dd>
               </div>
             ))}
           </dl>
@@ -132,7 +133,7 @@ export function TraceDetailPage() {
                 <li key={`${event.name}-${eventIndex}`} className="text-xs">
                   <span className="font-medium">{event.name || "event"}</span>
                   {stack ? (
-                    <pre className="mt-1 max-h-32 overflow-auto font-mono">{stack}</pre>
+                    <pre className="mt-1 max-h-32 overflow-auto font-mono"><Masked text={stack} /></pre>
                   ) : null}
                 </li>
                 );
@@ -145,7 +146,7 @@ export function TraceDetailPage() {
               <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto">
                 {detail.logs.map((log, logIndex) => (
                   <li key={`${log.tsMs}-${logIndex}`} className="text-xs">
-                    <span className="font-medium">{log.severity}</span> {log.body}
+                    <span className="font-medium">{log.severity}</span> <Masked text={log.body} />
                   </li>
                 ))}
               </ul>

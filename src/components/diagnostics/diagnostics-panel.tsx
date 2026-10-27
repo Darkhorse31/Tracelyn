@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { HowToFix } from "@/components/setup/how-to-fix";
+import { Masked } from "@/contexts/privacy-context";
 import { buttonVariants } from "@/components/ui/button";
 import { getServerDiagnostics } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -79,11 +80,11 @@ export function DiagnosticsPanel({ serverId }: { serverId: string }) {
                   <p className="text-sm">
                     <span className="font-medium">{row.collector}</span>
                     <span className="sr-only"> {row.status}. </span>
-                    <span className="text-muted-foreground"> — {row.message}</span>
+                    <span className="text-muted-foreground"> — <Masked text={row.message} /></span>
                   </p>
                   {row.fixHint && (
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <p className="text-xs text-muted-foreground">{row.fixHint}</p>
+                      <p className="text-xs text-muted-foreground"><Masked text={row.fixHint} /></p>
                       <HowToFix text={`${row.collector}: ${row.message}. ${row.fixHint}`} />
                     </div>
                   )}

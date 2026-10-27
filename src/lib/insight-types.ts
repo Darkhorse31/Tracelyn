@@ -129,6 +129,11 @@ export interface OtelStats {
   filesOk: number;
   filesError: number;
   lastError?: string | null;
+  reason?: string;
+  detail?: string;
+  sample?: string | null;
+  collector?: string;
+  lastWrite?: string | null;
 }
 
 export interface InsightSetup {

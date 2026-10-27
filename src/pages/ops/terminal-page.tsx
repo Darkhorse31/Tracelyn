@@ -4,14 +4,17 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
+import { toast } from "sonner";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { useTheme } from "@/contexts/theme-context";
 import { listenWhileMounted } from "@/lib/events";
 import { opsTerminalClose, opsTerminalOpen, opsTerminalResize, opsTerminalWrite } from "@/lib/ops-api";
 import type { TermEvent } from "@/lib/ops-types";
+import { extractLastOutput, stripAnsi } from "@/lib/terminal-text";
 import { useOpsMode } from "@/hooks/use-ops";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +40,25 @@ function decodeB64(value: string): Uint8Array {
   return bytes;
 }
 
+function bufferText(term: Terminal): string {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  for (let i = 0; i < buffer.length; i += 1) {
+    lines.push(buffer.getLine(i)?.translateToString(true) ?? "");
+  }
+  return lines.join("\n").replace(/\n+$/, "");
+}
+
+function saveText(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function TerminalPane({
   tabId,
   active,
@@ -48,12 +70,32 @@ function TerminalPane({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
+  const { enabled, mask } = usePrivacy();
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const rawRef = useRef("");
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const maskRef = useRef(mask);
+  maskRef.current = mask;
   const activeRef = useRef(active);
   activeRef.current = active;
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const copyItemRef = useRef<HTMLButtonElement>(null);
+
+  const show = (text: string) => (enabledRef.current ? maskRef.current(stripAnsi(text)) : text);
+
+  const copyText = async (text: string, message: string) => {
+    const value = maskRef.current(text);
+    if (!value) {
+      toast.message("Nothing selected");
+      return;
+    }
+    await navigator.clipboard.writeText(value);
+    toast.success(message);
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -85,20 +127,26 @@ function TerminalPane({
     void opsTerminalResize(tabId, term.cols, term.rows).catch(() => {});
 
     term.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !event.ctrlKey || !event.shiftKey) return true;
-      if (event.key === "C" || event.key === "c") {
-        const selection = term.getSelection();
-        if (selection) void navigator.clipboard.writeText(selection);
+      if (event.type !== "keydown" || !event.ctrlKey) return true;
+      const key = event.key.toLowerCase();
+      if (event.shiftKey && key === "c") {
+        void copyText(term.getSelection(), "Selection copied");
         return false;
       }
-      if (event.key === "V" || event.key === "v") {
+      if (event.shiftKey && key === "v") {
         void navigator.clipboard.readText().then((text) => term.paste(text));
+        return false;
+      }
+      if (event.shiftKey && key === "p") return false;
+      if (!event.shiftKey && !event.altKey && !event.metaKey && key === "c" && term.hasSelection()) {
+        void copyText(term.getSelection(), "Selection copied");
         return false;
       }
       return true;
     });
 
     const onData = term.onData((data) => {
+      if (data.includes("\r")) rawRef.current = `${rawRef.current}\r`.slice(-400_000);
       void opsTerminalWrite(tabId, data).catch(() => {});
     });
     const onResize = term.onResize(({ cols, rows }) => {
@@ -110,14 +158,24 @@ function TerminalPane({
     observer.observe(host);
     const onContext = (event: MouseEvent) => {
       event.preventDefault();
-      void navigator.clipboard.readText().then((text) => {
-        if (text) term.paste(text);
-      });
+      const x = Math.min(event.clientX, window.innerWidth - 160);
+      const y = Math.min(event.clientY, window.innerHeight - 88);
+      setMenu({ x, y });
+    };
+    const onMouseUp = () => {
+      const selection = term.getSelection();
+      if (selection) void copyText(selection, "Selection copied");
     };
     host.addEventListener("contextmenu", onContext);
+    host.addEventListener("mouseup", onMouseUp);
 
     const stop = listenWhileMounted<TermEvent>(`ops-terminal:${tabId}`, (event) => {
-      if (event.payload.dataB64) term.write(decodeB64(event.payload.dataB64));
+      if (event.payload.dataB64) {
+        const bytes = decodeB64(event.payload.dataB64);
+        const text = new TextDecoder().decode(bytes);
+        rawRef.current = `${rawRef.current}${text}`.slice(-400_000);
+        term.write(show(text));
+      }
       if (event.payload.closed) onClosedRef.current();
     });
 
@@ -127,6 +185,7 @@ function TerminalPane({
       onResize.dispose();
       observer.disconnect();
       host.removeEventListener("contextmenu", onContext);
+      host.removeEventListener("mouseup", onMouseUp);
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -155,14 +214,111 @@ function TerminalPane({
     }
   }, [resolvedTheme, active]);
 
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.reset();
+    term.write(show(rawRef.current));
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!menu) return;
+    copyItemRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(null);
+    };
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[role='menu']")) return;
+      setMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointer);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointer);
+    };
+  }, [menu]);
+
+  const copySelection = () => {
+    const term = termRef.current;
+    void copyText(term?.getSelection() ?? "", "Selection copied");
+  };
+  const copyLast = () => {
+    void copyText(extractLastOutput(rawRef.current), "Last output copied");
+  };
+  const copyAll = () => {
+    const term = termRef.current;
+    void copyText(term ? bufferText(term) : stripAnsi(rawRef.current), "Terminal copied");
+  };
+  const saveAll = () => {
+    const term = termRef.current;
+    const text = mask(term ? bufferText(term) : stripAnsi(rawRef.current));
+    saveText("terminal.txt", text);
+    toast.success("Terminal saved");
+  };
+
   return (
-    <div
-      ref={hostRef}
-      hidden={!active}
-      role="region"
-      aria-label="SSH terminal"
-      className={cn("h-[min(70vh,720px)] overflow-hidden rounded-lg border border-border bg-background p-2", !active && "hidden")}
-    />
+    <div hidden={!active} className={cn(!active && "hidden")}>
+      <div role="toolbar" aria-label="Terminal copy" className="mb-2 flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={copySelection} aria-label="Copy selection">
+          Copy selection
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={copyLast} aria-label="Copy last output">
+          Copy last output
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={copyAll} aria-label="Copy all">
+          Copy all
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={saveAll} aria-label="Save as text file">
+          Save as .txt
+        </Button>
+      </div>
+      <div
+        ref={hostRef}
+        role="region"
+        aria-label="SSH terminal"
+        className={cn(
+          "h-[min(70vh,720px)] overflow-hidden rounded-lg border border-border bg-background p-2",
+          enabled && "privacy-blur",
+        )}
+      />
+      {menu && (
+        <div
+          role="menu"
+          aria-label="Terminal clipboard"
+          className="fixed z-50 min-w-36 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          style={{ left: menu.x, top: menu.y }}
+        >
+          <button
+            ref={copyItemRef}
+            type="button"
+            role="menuitem"
+            className="block w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+            onClick={() => {
+              copySelection();
+              setMenu(null);
+            }}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="block w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+            onClick={() => {
+              const term = termRef.current;
+              if (term) {
+                void navigator.clipboard.readText().then((text) => term.paste(text));
+              }
+              setMenu(null);
+            }}
+          >
+            Paste
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

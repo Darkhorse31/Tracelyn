@@ -152,6 +152,27 @@ pub struct OtelStats {
     pub files_ok: u32,
     pub files_error: u32,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub detail: String,
+    #[serde(default)]
+    pub sample: Option<String>,
+    #[serde(default)]
+    pub collector: String,
+    #[serde(default)]
+    pub last_write: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OtelReport {
+    pub reason: String,
+    pub detail: String,
+    pub sample: Option<String>,
+    pub collector: String,
+    pub last_write: Option<String>,
+    pub watch: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

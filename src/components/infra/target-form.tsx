@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/status/notice";
@@ -104,8 +105,9 @@ export function TargetForm({
           {engine !== "rabbitmq" && (
             <div className="space-y-2">
               <Label htmlFor={`${id}-host`}>Host on server</Label>
-              <Input
+              <SecretInput
                 id={`${id}-host`}
+                kind="host"
                 placeholder="localhost"
                 value={target.host}
                 onChange={(e) => setTarget({ ...target, host: e.target.value })}
@@ -114,8 +116,9 @@ export function TargetForm({
           )}
           <div className="space-y-2">
             <Label htmlFor={`${id}-port`}>Port</Label>
-            <Input
+            <SecretInput
               id={`${id}-port`}
+              kind="port"
               type="number"
               min={1}
               max={65535}
@@ -124,7 +127,7 @@ export function TargetForm({
                   engine as "mysql" | "postgres" | "mongo" | "rabbitmq"
                 ],
               )}
-              value={target.port ?? ""}
+              value={target.port == null ? "" : String(target.port)}
               onChange={(e) =>
                 setTarget({
                   ...target,
@@ -174,8 +177,9 @@ export function TargetForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor={`${id}-user`}>Monitoring username</Label>
-              <Input
+              <SecretInput
                 id={`${id}-user`}
+                kind="user"
                 autoComplete="off"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -183,8 +187,9 @@ export function TargetForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor={`${id}-password`}>Password</Label>
-              <Input
+              <SecretInput
                 id={`${id}-password`}
+                kind="secret"
                 type="password"
                 autoComplete="new-password"
                 value={password}

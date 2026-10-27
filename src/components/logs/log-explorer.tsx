@@ -9,6 +9,7 @@ import { SimpleSelect } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useApps } from "@/hooks/use-apps";
 import { useLogStream } from "@/hooks/use-log-stream";
 import { LOG_LEVELS, type LogLevel, type LogLine } from "@/lib/log-types";
@@ -383,6 +384,7 @@ function LogRow({
   index: number;
   start: number;
 }) {
+  const { enabled, mask } = usePrivacy();
   const appName = apps.find((a) => a.id === line.appId)?.name;
   const json = line.raw.trim().startsWith("{");
   let pretty = line.raw;
@@ -410,10 +412,10 @@ function LogRow({
         {line.httpStatus ? (
           <span className="w-10 shrink-0">{line.httpStatus}</span>
         ) : null}
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">
-          {expanded ? pretty : highlight(line.message, query, useRegex)}
+        <span className={cn("min-w-0 flex-1 whitespace-pre-wrap break-all", enabled && "privacy-blur")} data-privacy-mask={enabled ? "" : undefined}>
+          {expanded ? mask(pretty) : highlight(mask(line.message), query, useRegex)}
         </span>
-        <button type="button" className="shrink-0 underline-offset-2 hover:underline" onClick={() => void navigator.clipboard.writeText(line.raw).then(() => toast.success("Copied line"))}>
+        <button type="button" className="shrink-0 underline-offset-2 hover:underline" onClick={() => void navigator.clipboard.writeText(mask(line.raw)).then(() => toast.success("Copied line"))}>
           Copy
         </button>
         {json && (

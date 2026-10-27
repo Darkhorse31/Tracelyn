@@ -34,6 +34,9 @@ pub struct LocalFacts {
     pub redis_configured: bool,
     pub engines: Vec<EngineFact>,
     pub paths: Vec<AskedPath>,
+    pub otel_spans: u64,
+    pub otel_detail: String,
+    pub otel_last_write: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -53,6 +56,8 @@ pub struct ProbeReport {
     pub docker: String,
     pub redis: String,
     pub paths: BTreeMap<String, String>,
+    pub path_mtime: BTreeMap<String, String>,
+    pub otel_collector: String,
 }
 
 pub fn safe_user(user: &str) -> String {
@@ -79,7 +84,7 @@ pub fn probe_script(paths: &[AskedPath]) -> String {
         let id = path.id.replace(|c: char| !c.is_ascii_alphanumeric(), "");
         let quoted = format!("'{}'", path.path);
         script.push_str(&format!(
-            "if [ -e {quoted} ]; then if [ -r {quoted} ]; then printf '__PATH__\\t{id}\\tok\\n'; else printf '__PATH__\\t{id}\\tfail\\n'; fi; else printf '__PATH__\\t{id}\\tmissing\\n'; fi\n"
+            "mt=$(stat -c %Y {quoted} 2>/dev/null || echo 0); if [ -e {quoted} ]; then if [ -r {quoted} ]; then printf '__PATH__\\t{id}\\tok\\t%s\\n' \"$mt\"; else printf '__PATH__\\t{id}\\tfail\\t%s\\n' \"$mt\"; fi; else printf '__PATH__\\t{id}\\tmissing\\t0\\n'; fi\n"
         ));
     }
     script.push_str("exit 0\n");
@@ -134,6 +139,13 @@ if command -v redis-cli >/dev/null 2>&1; then
 else
   printf '__REDIS__\tabsent\n'
 fi
+svc=missing
+if systemctl is-active --quiet otelcol-contrib 2>/dev/null; then svc=active
+elif systemctl is-active --quiet otelcol 2>/dev/null; then svc=active
+elif ps -eo args 2>/dev/null | grep -q '[o]telcol'; then svc=active
+elif [ -f /etc/otelcol-contrib/config.yaml ] || [ -f /etc/otelcol/config.yaml ]; then svc=inactive
+fi
+printf '__OTELCOL__\t%s\n' "$svc"
 "#;
 
 pub fn parse_probe(text: &str) -> ProbeReport {
@@ -166,10 +178,15 @@ pub fn parse_probe(text: &str) -> ProbeReport {
             "__PATH__" => {
                 let id = parts.next().unwrap_or("").to_string();
                 let status = parts.next().unwrap_or("fail").to_string();
+                let extra = parts.next().unwrap_or("").to_string();
                 if !id.is_empty() {
-                    report.paths.insert(id, status);
+                    report.paths.insert(id.clone(), status);
+                    if extra.chars().all(|c| c.is_ascii_digit()) && !extra.is_empty() {
+                        report.path_mtime.insert(id, extra);
+                    }
                 }
             }
+            "__OTELCOL__" => report.otel_collector = parts.next().unwrap_or("missing").trim().to_string(),
             _ => {}
         }
     }
@@ -211,14 +228,7 @@ pub fn build_checks(username: &str, probe: Option<&ProbeReport>, local: &LocalFa
     for engine in &local.engines {
         checks.push(engine_check(engine));
     }
-    checks.push(path_group_check(
-        "otel",
-        "OpenTelemetry file exporter",
-        "No OpenTelemetry file path is confirmed yet. On Traces, confirm the file the collector writes. Tracelyn only reads that file.",
-        &user,
-        probe,
-        local,
-    ));
+    checks.push(otel_check(&user, probe, local));
     checks.push(path_group_check(
         "app",
         "Application log paths",
@@ -662,6 +672,40 @@ fn engine_check(engine: &EngineFact) -> SetupCheck {
         )
     };
     row(&engine.id, &format!("{} credentials", engine.title), status, &explanation, None, vec![])
+}
+
+fn otel_check(user: &str, probe: Option<&ProbeReport>, local: &LocalFacts) -> SetupCheck {
+    let mut check = path_group_check(
+        "otel",
+        "OpenTelemetry file exporter",
+        "No collector config was found. Tracelyn looked at otelcol-contrib, otelcol, and /var/log/otel.",
+        user,
+        probe,
+        local,
+    );
+    let collector = probe.map(|item| item.otel_collector.as_str()).unwrap_or("");
+    let mut details = Vec::new();
+    if !collector.is_empty() {
+        details.push(format!("Collector service: {collector}"));
+    }
+    details.push(format!("Spans stored: {}", local.otel_spans));
+    if !local.otel_last_write.is_empty() {
+        details.push(format!("Last write: {}", local.otel_last_write));
+    }
+    if !local.otel_detail.is_empty() {
+        details.push(local.otel_detail.clone());
+    }
+    details.append(&mut check.details);
+    check.details = details;
+    if collector == "inactive" || collector == "missing" {
+        if check.status == "pass" {
+            check.status = "warning".into();
+        }
+        check.explanation = "The collector service is not active, so new spans are not being written. File access is listed below.".into();
+    } else if check.status != "pass" && !local.otel_detail.is_empty() {
+        check.explanation = local.otel_detail.clone();
+    }
+    check
 }
 
 fn path_group_check(

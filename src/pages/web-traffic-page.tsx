@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { useTimeRange } from "@/contexts/time-range-context";
 import { filterWebLogs, useWebTraffic } from "@/hooks/use-web-traffic";
@@ -34,6 +35,7 @@ function TopList({
   title: string;
   rows: { key: string; count: number }[];
 }) {
+  const { enabled, mask } = usePrivacy();
   return (
     <div className="min-w-0">
       <h3 className="mb-2 text-xs font-medium text-muted-foreground">{title}</h3>
@@ -51,8 +53,8 @@ function TopList({
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
-                <td className="truncate py-0.5 pr-2" title={r.key}>
-                  {r.key}
+                <td className={cn("truncate py-0.5 pr-2", enabled && "privacy-blur")} title={mask(r.key)} data-privacy-mask={enabled ? "" : undefined}>
+                  {mask(r.key)}
                 </td>
                 <td className="w-16 py-0.5 text-right text-muted-foreground">
                   {r.count.toLocaleString()}

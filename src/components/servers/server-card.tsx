@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import type {
   ConnectionStatus,
   OverviewServerMetrics,
@@ -96,7 +97,7 @@ export function ServerCard({
             <div className="min-w-0">
               <CardTitle className="truncate text-base">{server.name}</CardTitle>
               <CardDescription className="truncate font-mono text-xs">
-                {server.username}@{server.host}:{server.port}
+                <Masked text={`${server.username}@${server.host}:${server.port}`} />
               </CardDescription>
             </div>
           </div>

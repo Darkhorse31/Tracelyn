@@ -1,4 +1,5 @@
-use crate::insight::model::{OtelSuggestion, SlowEngineStatus};
+use crate::insight::model::{OtelReport, OtelSuggestion, SlowEngineStatus};
+use crate::insight::otel::OtelAssembler;
 
 pub fn validate_log_path(path: &str) -> Result<(), String> {
     if path.is_empty() || path.len() > 512 {
@@ -67,11 +68,13 @@ pub fn mongo_hint(enabled: bool, has_path: bool) -> String {
 pub struct Detection {
     pub suggestions: Vec<OtelSuggestion>,
     pub engines: Vec<SlowEngineStatus>,
+    pub otel: OtelReport,
 }
 
 pub fn detection_script(app_dirs: &[(String, String)]) -> String {
-    let mut script = String::from(
-        "echo OTEL\nfind /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \\( -name '*.json' -o -name '*.jsonl' -o -name '*.log' \\) ! -name '*.gz' 2>/dev/null | head -n 40\n",
+    let mut script = String::from(OTEL_DISCOVERY);
+    script.push_str(
+        "echo OTEL\nfind /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \\( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.json.*' \\) ! -name '*.gz' ! -name '*.gzip' 2>/dev/null | head -n 40\n",
     );
     for (id, cwd) in app_dirs.iter().take(20) {
         if !safe_token(id) || validate_log_path(cwd).is_err() {
@@ -95,9 +98,71 @@ pub fn parse_detect_output(text: &str) -> Detection {
     let mut mysql = String::new();
     let mut pg = String::new();
     let mut mongo = String::new();
+    let mut collector = String::new();
+    let mut configs: Vec<String> = Vec::new();
+    let mut config_buf = String::new();
+    let mut in_config = false;
+    let mut config_unreadable = false;
+    let mut scan: Vec<String> = Vec::new();
+    let mut facts: Vec<FileFact> = Vec::new();
+    let mut in_sample = false;
+    let mut sample_buf = String::new();
     for line in text.lines() {
         let trimmed = line.trim();
+        if in_config {
+            if trimmed == "ENDFILE" {
+                configs.push(std::mem::take(&mut config_buf));
+                in_config = false;
+            } else {
+                config_buf.push_str(line);
+                config_buf.push('\n');
+            }
+            continue;
+        }
+        if in_sample {
+            if trimmed == "ENDSAMPLE" {
+                if let Some(fact) = facts.last_mut() {
+                    fact.sample = sample_buf.trim().chars().take(500).collect();
+                }
+                sample_buf.clear();
+                in_sample = false;
+            } else {
+                if !sample_buf.is_empty() {
+                    sample_buf.push('\n');
+                }
+                sample_buf.push_str(trimmed);
+            }
+            continue;
+        }
         match trimmed {
+            "OTELMETA" => {
+                section = "meta";
+                continue;
+            }
+            "CONFIGS" => {
+                section = "configs";
+                continue;
+            }
+            "ENDCONFIGS" => {
+                section = "meta";
+                continue;
+            }
+            "SCAN" => {
+                section = "scan";
+                continue;
+            }
+            "ENDSCAN" => {
+                section = "meta";
+                continue;
+            }
+            "STATS" => {
+                section = "stats";
+                continue;
+            }
+            "ENDSTATS" => {
+                section = "meta";
+                continue;
+            }
             "OTEL" => {
                 section = "otel";
                 app_id.clear();
@@ -120,12 +185,45 @@ pub fn parse_detect_output(text: &str) -> Detection {
                 section = "mongo";
                 continue;
             }
+            "SAMPLE" if section == "stats" => {
+                in_sample = true;
+                sample_buf.clear();
+                continue;
+            }
             _ => {}
         }
         if let Some(id) = trimmed.strip_prefix("APP ") {
             if safe_token(id) {
                 section = "app";
                 app_id = id.to_string();
+            }
+            continue;
+        }
+        if section == "meta" {
+            if let Some(state) = trimmed.strip_prefix("SERVICE ") {
+                collector = state.trim().to_string();
+            }
+            continue;
+        }
+        if section == "configs" {
+            if let Some(path) = trimmed.strip_prefix("FILE ") {
+                let _ = path;
+                in_config = true;
+                config_buf.clear();
+            } else if trimmed.starts_with("UNREADABLE ") {
+                config_unreadable = true;
+            }
+            continue;
+        }
+        if section == "scan" {
+            if let Some(path) = clean_path(trimmed) {
+                scan.push(path);
+            }
+            continue;
+        }
+        if section == "stats" {
+            if let Some(fact) = parse_stat_line(trimmed) {
+                facts.push(fact);
             }
             continue;
         }
@@ -161,6 +259,7 @@ pub fn parse_detect_output(text: &str) -> Detection {
     }
     suggestions.sort_by(|a, b| a.path.cmp(&b.path));
     suggestions.dedup_by(|a, b| a.path == b.path && a.app_id == b.app_id);
+    let otel = build_otel_report(&collector, config_unreadable, &configs, &scan, &facts, &suggestions);
     Detection {
         suggestions,
         engines: vec![
@@ -168,7 +267,290 @@ pub fn parse_detect_output(text: &str) -> Detection {
             postgres_status(&pg),
             mongo_status(&mongo),
         ],
+        otel,
     }
+}
+
+struct FileFact {
+    path: String,
+    state: String,
+    size: u64,
+    mtime: i64,
+    sample: String,
+}
+
+const OTEL_DISCOVERY: &str = r#"echo OTELMETA
+svc=missing
+if systemctl is-active --quiet otelcol-contrib 2>/dev/null; then svc=active
+elif systemctl is-active --quiet otelcol 2>/dev/null; then svc=active
+elif ps -eo args 2>/dev/null | grep -q '[o]telcol'; then svc=active
+elif [ -f /etc/otelcol-contrib/config.yaml ] || [ -f /etc/otelcol/config.yaml ]; then svc=inactive
+fi
+echo "SERVICE $svc"
+echo CONFIGS
+for f in /etc/otelcol-contrib/config.yaml /etc/otelcol/config.yaml; do
+  if [ -f "$f" ]; then
+    if [ -r "$f" ]; then echo "FILE $f"; sed -n '1,800p' "$f"; echo ENDFILE
+    else echo "UNREADABLE $f"; fi
+  fi
+done
+ps -eo args 2>/dev/null | grep -E '[o]telcol' | sed -n 's/.*--config[= ]\{0,1\}\([^ ]*\).*/\1/p' | while read -r c; do
+  case "$c" in
+    /etc/otelcol-contrib/config.yaml|/etc/otelcol/config.yaml|"") ;;
+    *)
+      if [ -r "$c" ]; then echo "FILE $c"; sed -n '1,800p' "$c"; echo ENDFILE
+      elif [ -e "$c" ]; then echo "UNREADABLE $c"; fi
+      ;;
+  esac
+done
+echo ENDCONFIGS
+echo SCAN
+find /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.json.*' \) ! -name '*.gz' ! -name '*.gzip' 2>/dev/null | head -n 40
+echo ENDSCAN
+echo STATS
+{
+  find /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.json.*' \) ! -name '*.gz' 2>/dev/null
+  grep -hE '^[[:space:]]*path:[[:space:]]*/' /etc/otelcol-contrib/config.yaml /etc/otelcol/config.yaml 2>/dev/null | sed -n 's/.*path:[[:space:]]*//p' | tr -d "\"'"
+} | sort -u | head -n 40 | while read -r p; do
+  if [ -r "$p" ]; then
+    sz=$(stat -c %s -- "$p" 2>/dev/null || echo 0)
+    mt=$(stat -c %Y -- "$p" 2>/dev/null || echo 0)
+    echo "OK $sz $mt $p"
+    echo SAMPLE
+    grep -m 1 . -- "$p" 2>/dev/null | head -c 500
+    echo
+    echo ENDSAMPLE
+  elif [ -e "$p" ]; then
+    echo "DENY 0 0 $p"
+  else
+    echo "MISS 0 0 $p"
+  fi
+done
+echo ENDSTATS
+"#;
+
+pub fn file_exporter_paths(yaml: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut in_exporters = false;
+    let mut exporters_indent = 0usize;
+    let mut in_file = false;
+    let mut file_indent = 0usize;
+    for line in yaml.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = indent_of(line);
+        if !in_exporters {
+            if trimmed == "exporters:" || trimmed.starts_with("exporters:") {
+                in_exporters = true;
+                exporters_indent = indent;
+            }
+            continue;
+        }
+        if indent <= exporters_indent {
+            in_exporters = false;
+            in_file = false;
+            if trimmed == "exporters:" || trimmed.starts_with("exporters:") {
+                in_exporters = true;
+                exporters_indent = indent;
+            }
+            continue;
+        }
+        if in_file && indent <= file_indent {
+            in_file = false;
+        }
+        let key = trimmed.split(':').next().unwrap_or("").trim();
+        if !in_file && (key == "file" || key.starts_with("file/")) {
+            in_file = true;
+            file_indent = indent;
+            continue;
+        }
+        if in_file {
+            if let Some((name, value)) = split_setting(line) {
+                if name == "path" || name.ends_with(".path") {
+                    if let Some(path) = clean_path(&value) {
+                        if !paths.contains(&path) {
+                            paths.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn indent_of(line: &str) -> usize {
+    line.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 2 } else { 1 })
+        .sum()
+}
+
+fn parse_stat_line(line: &str) -> Option<FileFact> {
+    let mut parts = line.splitn(4, ' ');
+    let state = parts.next()?.trim();
+    if !matches!(state, "OK" | "DENY" | "MISS") {
+        return None;
+    }
+    let size: u64 = parts.next()?.parse().ok()?;
+    let mtime: i64 = parts.next()?.parse().ok()?;
+    let path = clean_path(parts.next()?)?;
+    Some(FileFact {
+        path,
+        state: state.to_string(),
+        size,
+        mtime,
+        sample: String::new(),
+    })
+}
+
+fn build_otel_report(
+    collector: &str,
+    config_unreadable: bool,
+    configs: &[String],
+    scan: &[String],
+    facts: &[FileFact],
+    suggestions: &[OtelSuggestion],
+) -> OtelReport {
+    let mut watch = Vec::new();
+    let mut config_found = !configs.is_empty();
+    for cfg in configs {
+        for path in file_exporter_paths(cfg) {
+            push_unique(&mut watch, path);
+            config_found = true;
+        }
+    }
+    for path in scan {
+        push_unique(&mut watch, path.clone());
+    }
+    for suggestion in suggestions {
+        if suggestion.path.contains("/var/log/otel")
+            || suggestion.path.contains("/var/log/opentelemetry")
+            || suggestion.path.ends_with(".json")
+            || suggestion.path.ends_with(".jsonl")
+        {
+            push_unique(&mut watch, suggestion.path.clone());
+        }
+    }
+    let collector = if collector.is_empty() {
+        "unknown".into()
+    } else {
+        collector.to_string()
+    };
+    let last_write = facts
+        .iter()
+        .filter(|fact| fact.state == "OK" && fact.mtime > 0)
+        .max_by_key(|fact| fact.mtime)
+        .map(|fact| format_epoch(fact.mtime));
+    if watch.is_empty() && !config_found {
+        let detail = if config_unreadable {
+            "A collector config was found but the SSH user cannot read it.".into()
+        } else if collector == "missing" || collector == "unknown" {
+            "No collector config was found. Tracelyn looked at otelcol-contrib, otelcol, and /var/log/otel.".into()
+        } else {
+            "The collector service was seen, but no file exporter path was found.".into()
+        };
+        return OtelReport {
+            reason: "no_config".into(),
+            detail,
+            sample: None,
+            collector,
+            last_write,
+            watch,
+        };
+    }
+    let known: Vec<_> = facts.iter().filter(|fact| watch.iter().any(|path| path == &fact.path)).collect();
+    if !known.is_empty() && known.iter().all(|fact| fact.state == "DENY") {
+        return OtelReport {
+            reason: "unreadable".into(),
+            detail: format!(
+                "The collector file {} is not readable by the SSH user.",
+                known[0].path
+            ),
+            sample: None,
+            collector,
+            last_write,
+            watch,
+        };
+    }
+    if !known.is_empty() && known.iter().all(|fact| fact.state == "MISS") {
+        return OtelReport {
+            reason: "missing".into(),
+            detail: format!("The collector file {} is not on disk.", known[0].path),
+            sample: None,
+            collector,
+            last_write,
+            watch,
+        };
+    }
+    let readable: Vec<_> = known.iter().filter(|fact| fact.state == "OK").collect();
+    if !readable.is_empty() && readable.iter().all(|fact| fact.size == 0) {
+        return OtelReport {
+            reason: "empty".into(),
+            detail: format!("The collector file {} is empty.", readable[0].path),
+            sample: None,
+            collector,
+            last_write,
+            watch,
+        };
+    }
+    for fact in &readable {
+        if fact.sample.is_empty() {
+            continue;
+        }
+        let mut asm = OtelAssembler::default();
+        let batch = asm.push(&fact.sample);
+        if !batch.spans.is_empty() || !batch.logs.is_empty() {
+            return OtelReport {
+                reason: "ok".into(),
+                detail: format!(
+                    "Reading {}. Last write {}.",
+                    fact.path,
+                    last_write.clone().unwrap_or_else(|| "unknown".into())
+                ),
+                sample: None,
+                collector,
+                last_write,
+                watch,
+            };
+        }
+        if asm.malformed > 0 {
+            return OtelReport {
+                reason: "parse_error".into(),
+                detail: format!("A line in {} is not OTLP JSON.", fact.path),
+                sample: Some(fact.sample.chars().take(180).collect()),
+                collector,
+                last_write,
+                watch,
+            };
+        }
+    }
+    OtelReport {
+        reason: if watch.is_empty() { "no_config" } else { "waiting" }.into(),
+        detail: if watch.is_empty() {
+            "No collector config was found. Tracelyn looked at otelcol-contrib, otelcol, and /var/log/otel.".into()
+        } else {
+            format!("Watching {}. The next read will load spans.", watch[0])
+        },
+        sample: None,
+        collector,
+        last_write,
+        watch,
+    }
+}
+
+fn push_unique(paths: &mut Vec<String>, path: String) {
+    if !paths.contains(&path) {
+        paths.push(path);
+    }
+}
+
+fn format_epoch(secs: i64) -> String {
+    chrono::DateTime::from_timestamp(secs, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+        .unwrap_or_else(|| "unknown".into())
 }
 
 fn mysql_status(text: &str) -> SlowEngineStatus {
@@ -404,5 +786,84 @@ path: /var/log/mongodb/mongod.log
         assert!(!script.contains("bad id"));
         assert!(!script.contains("a'b"));
         assert!(script.contains("slow_query_log"));
+        assert!(script.contains("otelcol-contrib"));
+        assert!(script.contains("--config"));
+    }
+
+    #[test]
+    fn reads_file_exporter_paths_and_a_real_sample() {
+        let yaml = "
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:4317
+exporters:
+  file:
+    path: /var/log/otel/telemetry.json
+  debug:
+    verbosity: basic
+service:
+  pipelines:
+    traces:
+      exporters: [file]
+";
+        assert_eq!(
+            file_exporter_paths(yaml),
+            vec!["/var/log/otel/telemetry.json".to_string()]
+        );
+        let text = "\
+OTELMETA
+SERVICE active
+CONFIGS
+FILE /etc/otelcol-contrib/config.yaml
+exporters:
+  file:
+    path: /var/log/otel/telemetry.json
+ENDFILE
+ENDCONFIGS
+SCAN
+/var/log/otel/telemetry.json
+/var/log/otel/telemetry.json.1
+ENDSCAN
+STATS
+OK 120 1700000000 /var/log/otel/telemetry.json
+SAMPLE
+{\"resourceSpans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"bharattales-web\"}}]},\"scopeSpans\":[{\"spans\":[{\"traceId\":\"abc123abc123abc123abc123abc123ab\",\"spanId\":\"def456def456def4\",\"name\":\"GET /\",\"kind\":2,\"startTimeUnixNano\":\"1700000000000000000\",\"endTimeUnixNano\":\"1700000000100000000\"}]}]}]}
+ENDSAMPLE
+DENY 0 0 /var/log/secret.json
+ENDSTATS
+OTEL
+/var/log/otel/telemetry.json
+";
+        let found = parse_detect_output(text);
+        assert_eq!(found.otel.collector, "active");
+        assert!(found.otel.watch.iter().any(|p| p == "/var/log/otel/telemetry.json"));
+        assert!(found.otel.watch.iter().any(|p| p == "/var/log/otel/telemetry.json.1"));
+        assert_eq!(found.otel.reason, "ok");
+        assert!(found.otel.detail.contains("/var/log/otel/telemetry.json"));
+        assert!(found.otel.last_write.as_deref().unwrap_or("").contains("2023"));
+    }
+
+    #[test]
+    fn reports_missing_collector_and_bad_json() {
+        let missing = parse_detect_output("OTELMETA\nSERVICE missing\n");
+        assert_eq!(missing.otel.reason, "no_config");
+        assert!(missing.otel.detail.contains("No collector config"));
+
+        let bad = parse_detect_output(
+            "\
+STATS
+OK 20 10 /var/log/otel/telemetry.json
+SAMPLE
+this is not json
+ENDSAMPLE
+ENDSTATS
+OTEL
+/var/log/otel/telemetry.json
+",
+        );
+        assert_eq!(bad.otel.reason, "parse_error");
+        assert!(bad.otel.sample.unwrap().contains("not json"));
     }
 }

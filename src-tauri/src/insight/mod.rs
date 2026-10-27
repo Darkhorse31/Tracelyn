@@ -1,7 +1,7 @@
 pub(crate) mod detect;
 mod map;
 pub(crate) mod model;
-mod otel;
+pub(crate) mod otel;
 mod poller;
 mod slowlog;
 mod stack;

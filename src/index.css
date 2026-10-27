@@ -194,6 +194,10 @@
   }
 }
 
+html[data-privacy="on"] .privacy-blur {
+  filter: blur(5px);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring;

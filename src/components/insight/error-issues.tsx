@@ -5,6 +5,7 @@ import { Sparkline } from "@/components/charts/sparkline";
 import { Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import { listErrorIssues, setErrorIssueState } from "@/lib/api";
 import type { ErrorIssue } from "@/lib/insight-types";
 
@@ -113,7 +114,7 @@ export function ErrorIssues({
                         aria-expanded={openId === row.fingerprint}
                         onClick={() => setOpenId(openId === row.fingerprint ? null : row.fingerprint)}
                       >
-                        {row.title || row.sampleMessage}
+                        <Masked text={row.title || row.sampleMessage} />
                       </button>
                       <span className="mt-1 block text-xs text-muted-foreground">
                         First seen {when(row.firstSeenMs)}
@@ -148,8 +149,8 @@ export function ErrorIssues({
                   {openId === row.fingerprint && (
                     <tr className="border-b border-border/60">
                       <td colSpan={6} className="bg-muted/30 px-3 py-3">
-                        <p className="text-sm">{row.sampleMessage}</p>
-                        <pre className="mt-2 max-h-48 overflow-auto font-mono text-xs">{row.sampleStack}</pre>
+                        <p className="text-sm"><Masked text={row.sampleMessage} /></p>
+                        <pre className="mt-2 max-h-48 overflow-auto font-mono text-xs"><Masked text={row.sampleStack} /></pre>
                         <div className="mt-2 flex flex-wrap gap-3 text-sm">
                           {row.traceIds.map((id) => (
                             <Link key={id} className="text-primary underline-offset-2 hover:underline" to={`/traces/${encodeURIComponent(id)}`}>

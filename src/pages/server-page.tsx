@@ -13,6 +13,7 @@ import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { useTimeRange } from "@/contexts/time-range-context";
 import { useServerMetrics } from "@/hooks/use-server-metrics";
@@ -87,7 +88,7 @@ export function ServerPage() {
         <div className="min-w-0">
           <h2 className="truncate text-xl font-semibold tracking-tight">{server.name}</h2>
           <p className="truncate font-mono text-sm text-muted-foreground">
-            {server.username}@{server.host}:{server.port}
+            <Masked text={`${server.username}@${server.host}:${server.port}`} />
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

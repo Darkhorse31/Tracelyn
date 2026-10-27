@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import { SimpleSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -247,19 +248,21 @@ function ChannelDialog({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label htmlFor={`${formId}-host`}>SMTP host</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-host`}
+                  kind="host"
                   value={draft.config.smtpHost}
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, smtpHost: e.target.value } })}
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${formId}-port`}>Port</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-port`}
+                  kind="port"
                   type="number"
                   className="font-mono"
-                  value={draft.config.smtpPort}
+                  value={String(draft.config.smtpPort)}
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, smtpPort: Number(e.target.value) } })}
                 />
               </div>
@@ -278,8 +281,9 @@ function ChannelDialog({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${formId}-from`}>From</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-from`}
+                  kind="text"
                   type="email"
                   value={draft.config.mailFrom}
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, mailFrom: e.target.value } })}
@@ -287,8 +291,9 @@ function ChannelDialog({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor={`${formId}-to`}>To</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-to`}
+                  kind="text"
                   type="email"
                   value={draft.config.mailTo}
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, mailTo: e.target.value } })}
@@ -296,8 +301,9 @@ function ChannelDialog({
               </div>
               <div className="grid gap-1.5 sm:col-span-2">
                 <Label htmlFor={`${formId}-user`}>Username</Label>
-                <Input
+                <SecretInput
                   id={`${formId}-user`}
+                  kind="user"
                   autoComplete="off"
                   value={draft.config.username}
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, username: e.target.value } })}
@@ -308,8 +314,9 @@ function ChannelDialog({
           {needsSecret(draft.kind) && (
             <div className="grid gap-1.5">
               <Label htmlFor={`${formId}-secret`}>{secretLabel}</Label>
-              <Input
+              <SecretInput
                 id={`${formId}-secret`}
+                kind="secret"
                 type="password"
                 autoComplete="new-password"
                 spellCheck={false}

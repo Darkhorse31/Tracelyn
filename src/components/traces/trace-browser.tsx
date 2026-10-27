@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked } from "@/contexts/privacy-context";
 import { useTimeRange } from "@/contexts/time-range-context";
-import { listTraces } from "@/lib/api";
-import type { TraceSummary } from "@/lib/insight-types";
+import { getInsightSetup, listTraces } from "@/lib/api";
+import type { InsightSetup, TraceSummary } from "@/lib/insight-types";
 import { formatDur } from "@/components/traces/waterfall";
 
 function windowFor(isLive: boolean, startMs: number, endMs: number) {
@@ -31,6 +32,7 @@ export function TraceBrowser({
   const [minDuration, setMinDuration] = useState(params.get("min") ?? "");
   const [traceId, setTraceId] = useState(params.get("trace") ?? "");
   const [rows, setRows] = useState<TraceSummary[] | null>(null);
+  const [setup, setSetup] = useState<InsightSetup | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,8 +69,21 @@ export function TraceBrowser({
           if (!cancelled) setError(String(err));
         });
     };
+    const loadSetup = () => {
+      void getInsightSetup(serverId)
+        .then((next) => {
+          if (!cancelled) setSetup(next);
+        })
+        .catch(() => {
+          if (!cancelled) setSetup(null);
+        });
+    };
     load();
-    const timer = isLive ? setInterval(load, 5000) : undefined;
+    loadSetup();
+    const timer = isLive ? setInterval(() => {
+      load();
+      loadSetup();
+    }, 5000) : undefined;
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
@@ -123,8 +138,21 @@ export function TraceBrowser({
       {rows && rows.length === 0 && (
         <EmptyState
           title="No traces in this range"
-          description="Confirm an OpenTelemetry file on the Traces page or the application overview. Apps write OTLP JSON through the Collector file exporter. Tracelyn only reads that file."
+          description={
+            setup?.stats.detail ||
+            "No collector file has been read yet. Tracelyn tails the OpenTelemetry file exporter over SSH."
+          }
+          action={
+            <Button variant="outline" render={<Link to="/setup?step=otel" />}>
+              Open the Setup Guide
+            </Button>
+          }
         />
+      )}
+      {rows && rows.length === 0 && setup?.stats.sample && (
+        <pre className="overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs">
+          <Masked text={setup.stats.sample} />
+        </pre>
       )}
       {rows && rows.length > 0 && (
         <div className="overflow-x-auto">
@@ -144,10 +172,12 @@ export function TraceBrowser({
               {rows.map((row) => (
                 <tr key={row.traceId} className="border-b border-border/60">
                   <td className="py-2 pr-3 whitespace-nowrap">{new Date(row.startMs).toLocaleString()}</td>
-                  <td className="py-2 pr-3">{row.service}</td>
+                  <td className="py-2 pr-3">
+                    <Masked text={row.service} />
+                  </td>
                   <td className="py-2 pr-3">
                     <Link className="font-mono text-primary underline-offset-2 hover:underline" to={`/traces/${encodeURIComponent(row.traceId)}`}>
-                      {row.operation}
+                      <Masked text={row.operation} />
                     </Link>
                   </td>
                   <td className="py-2 pr-3">

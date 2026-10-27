@@ -71,6 +71,13 @@ fn gather_local(state: &AppState, infra: &InfraState, server_id: &str) -> LocalF
         })
         .collect();
     let otel = crate::insight::store::watched_files(conn, server_id).unwrap_or_default();
+    let insight = crate::insight::store::setup(conn, server_id).ok();
+    let otel_spans = insight.as_ref().map(|row| row.stats.spans_ingested).unwrap_or(0);
+    let otel_detail = insight.as_ref().map(|row| row.stats.detail.clone()).unwrap_or_default();
+    let otel_last_write = insight
+        .as_ref()
+        .and_then(|row| row.stats.last_write.clone())
+        .unwrap_or_default();
     drop(db);
     let mut paths = Vec::new();
     let mut n = 0u32;
@@ -104,6 +111,9 @@ fn gather_local(state: &AppState, infra: &InfraState, server_id: &str) -> LocalF
         redis_configured,
         engines,
         paths,
+        otel_spans,
+        otel_detail,
+        otel_last_write,
     }
 }
 

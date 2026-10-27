@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Masked, usePrivacy } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { runSetupChecks, type SetupCheck } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export function SetupPage() {
   const { servers, selectedServerId, setSelectedServerId } = useServersContext();
+  const { mask } = usePrivacy();
   const [params] = useSearchParams();
   const step = params.get("step");
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
@@ -135,21 +137,21 @@ export function SetupPage() {
                       {check.details.length > 0 && (
                         <ul className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
                           {check.details.map((line) => (
-                            <li key={line}>{line}</li>
+                            <li key={line}><Masked text={line} /></li>
                           ))}
                         </ul>
                       )}
                       {check.command && (
                         <div className="flex flex-wrap items-start gap-2">
                           <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
-                            {check.command}
+                            <Masked text={check.command ?? ""} />
                           </pre>
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              void navigator.clipboard.writeText(check.command ?? "");
+                              void navigator.clipboard.writeText(mask(check.command ?? ""));
                               toast.success("Command copied");
                             }}
                           >

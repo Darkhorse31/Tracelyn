@@ -89,7 +89,8 @@ pub struct OtelAssembler {
 
 impl OtelAssembler {
     pub fn push(&mut self, chunk: &str) -> OtelBatch {
-        if self.partial.len() + chunk.len() > 512 * 1024 && !self.partial.is_empty() {
+        // ponytail: one OTLP export line can be the whole file. 2MB ceiling, raise if a single flush exceeds it.
+        if self.partial.len() + chunk.len() > 2 * 1024 * 1024 && !self.partial.is_empty() {
             self.malformed += 1;
             self.partial.clear();
         }
@@ -97,7 +98,7 @@ impl OtelAssembler {
         let (docs, rest, garbage) = split_json_documents(&self.partial);
         self.malformed += garbage;
         self.partial = rest;
-        if self.partial.len() > 256 * 1024 {
+        if self.partial.len() > 2 * 1024 * 1024 {
             self.malformed += 1;
             self.partial.clear();
         }
@@ -737,5 +738,21 @@ mod tests {
         assert_eq!(bare.spans.len(), 1);
         assert_eq!(bare.spans[0].kind, "consumer");
         assert_eq!(bare.spans[0].service, "unknown");
+    }
+
+    #[test]
+    fn mixed_otlp_json_lines_keep_service_name() {
+        let trace = r#"{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"bharattales-web"}}]},"scopeSpans":[{"spans":[{"traceId":"4bf92f3577b34da6a3ce929d0e0e4736","spanId":"00f067aa0ba902b7","name":"GET /","kind":2,"startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000000120000000","attributes":[{"key":"http.request.method","value":{"stringValue":"GET"}}],"status":{"code":1}}]}]}]}"#;
+        let log = r#"{"resourceLogs":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"bharattales-web"}}]},"scopeLogs":[{"logRecords":[{"timeUnixNano":"1700000000200000000","severityText":"INFO","body":{"stringValue":"request served"},"traceId":"4bf92f3577b34da6a3ce929d0e0e4736","spanId":"00f067aa0ba902b7"}]}]}]}"#;
+        let mut asm = OtelAssembler::default();
+        let batch = asm.push(&format!("{trace}\n{log}\n"));
+        assert_eq!(batch.spans.len(), 1);
+        assert_eq!(batch.spans[0].service, "bharattales-web");
+        assert_eq!(batch.spans[0].operation, "GET /");
+        assert_eq!(batch.spans[0].duration_us, 120_000);
+        assert_eq!(batch.logs.len(), 1);
+        assert_eq!(batch.logs[0].service, "bharattales-web");
+        assert!(batch.logs[0].body.contains("request served"));
+        assert_eq!(asm.malformed, 0);
     }
 }

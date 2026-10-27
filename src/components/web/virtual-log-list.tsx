@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef } from "react";
+import { usePrivacy } from "@/contexts/privacy-context";
 import type { LiveLogLine } from "@/lib/web-traffic-types";
 import { cn } from "cn";
 
@@ -16,6 +17,7 @@ function statusColor(status: number) {
 
 export function VirtualLogList({ lines }: VirtualLogListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const { enabled, mask } = usePrivacy();
   const virtualizer = useVirtualizer({
     count: lines.length,
     getScrollElement: () => parentRef.current,
@@ -49,11 +51,11 @@ export function VirtualLogList({ lines }: VirtualLogListProps) {
                   {line.status}
                 </span>
                 <span className="w-14 shrink-0 text-muted-foreground">{line.method}</span>
-                <span className="min-w-0 flex-1 truncate" title={line.path}>
-                  {line.path}
+                <span className={cn("min-w-0 flex-1 truncate", enabled && "privacy-blur")} title={mask(line.path)}>
+                  {mask(line.path)}
                 </span>
-                <span className="hidden w-32 shrink-0 truncate text-muted-foreground sm:inline">
-                  {line.remoteAddr}
+                <span className={cn("hidden w-32 shrink-0 truncate text-muted-foreground sm:inline", enabled && "privacy-blur")} data-privacy-mask={enabled ? "" : undefined}>
+                  {mask(line.remoteAddr)}
                 </span>
                 <span className="w-16 shrink-0 text-right text-muted-foreground">
                   {line.latencyMs !== undefined ? `${line.latencyMs.toFixed(0)} ms` : "—"}

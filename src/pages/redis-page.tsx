@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/contexts/privacy-context";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRedisDashboard } from "@/hooks/use-redis-dashboard";
@@ -119,8 +120,9 @@ export function RedisPage() {
           <div className="grid gap-3">
             <div className="grid gap-1">
               <Label htmlFor="redis-user">ACL username</Label>
-              <Input
+              <SecretInput
                 id="redis-user"
+                kind="user"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="off"
@@ -129,8 +131,9 @@ export function RedisPage() {
             </div>
             <div className="grid gap-1">
               <Label htmlFor="redis-pass">Password</Label>
-              <Input
+              <SecretInput
                 id="redis-pass"
+                kind="secret"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -139,10 +142,11 @@ export function RedisPage() {
             </div>
             <div className="grid gap-1">
               <Label htmlFor="redis-port">Port</Label>
-              <Input
+              <SecretInput
                 id="redis-port"
+                kind="port"
                 inputMode="numeric"
-                value={target.port ?? ""}
+                value={target.port == null ? "" : String(target.port)}
                 onChange={(e) =>
                   setTarget({ ...target, port: e.target.value ? Number(e.target.value) : null })
                 }
@@ -151,8 +155,9 @@ export function RedisPage() {
             </div>
             <div className="grid gap-1">
               <Label htmlFor="redis-sock">Unix socket</Label>
-              <Input
+              <SecretInput
                 id="redis-sock"
+                kind="secret"
                 value={target.socket ?? ""}
                 onChange={(e) => setTarget({ ...target, socket: e.target.value })}
                 placeholder="/var/run/redis/redis.sock"
