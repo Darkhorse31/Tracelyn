@@ -1,72 +1,55 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  ArrowDown,
-  ArrowUp,
-  Download,
-  LayoutGrid,
-  List,
-  Loader2,
-  Plus,
-  Upload,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Loader2, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { FleetToolbar } from "@/components/servers/fleet-toolbar";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { ServerImportDialog } from "@/components/servers/server-import-dialog";
-import {
-  CONNECTION_STATUS_LABELS,
-  ConnectionStatusBadge,
-} from "@/components/status/connection-status-badge";
+import { ConnectionStatusBadge } from "@/components/status/connection-status-badge";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { PageSkeleton } from "@/components/status/page-skeleton";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { SimpleSelect } from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useServersContext } from "@/contexts/servers-context";
 import { Masked } from "@/contexts/privacy-context";
-import { useRememberedState } from "@/hooks/use-remembered-state";
+import {
+  readPreference,
+  useRememberedState,
+} from "@/hooks/use-remembered-state";
 import { useOverviewMetrics } from "@/hooks/use-overview-metrics";
 import { useFleetSummary } from "@/hooks/use-fleet-summary";
 import { exportServers } from "@/lib/fleet-api";
-import type { ServerRecord } from "@/lib/types";
+import {
+  FLEET_SORT_COLUMNS,
+  filterAndSortFleet,
+  groupFleetRows,
+  rowMatchesFilters,
+  seenLabel,
+  statusCounts,
+  tagsFromStored,
+  toggleFleetSort,
+  type FleetSortKey,
+  type FleetViewRow,
+} from "@/lib/fleet-view";
+import type { ConnectionStatus, ServerRecord } from "@/lib/types";
+import { cn } from "cn";
 
-type SortKey =
-  | "name"
-  | "status"
-  | "cpu"
-  | "memory"
-  | "disk"
-  | "apps"
-  | "alerts"
-  | "lastSeen";
-const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: "name", label: "Server" },
-  { key: "status", label: "Status" },
-  { key: "cpu", label: "CPU" },
-  { key: "memory", label: "Memory" },
-  { key: "disk", label: "Disk" },
-  { key: "apps", label: "Apps" },
-  { key: "alerts", label: "Active alerts" },
-  { key: "lastSeen", label: "Last seen" },
-];
-const STATUS_RANK: Record<string, number> = {
-  offline: 0,
-  degraded: 1,
-  disconnected: 2,
-  connecting: 3,
-  connected: 4,
+const STRIPE: Record<ConnectionStatus, string> = {
+  disconnected: "bg-muted-foreground",
+  connecting: "bg-status-info",
+  connected: "bg-status-ok",
+  degraded: "bg-status-warning",
+  offline: "bg-status-critical",
 };
-function seenLabel(timestamp: number | null | undefined) {
-  if (!timestamp) return "Never";
-  const age = Math.max(0, Date.now() - timestamp);
-  if (age < 15_000) return "Just now";
-  if (age < 60_000) return `${Math.floor(age / 1000)}s ago`;
-  if (age < 3_600_000) return `${Math.floor(age / 60_000)}m ago`;
-  if (age < 86_400_000) return `${Math.floor(age / 3_600_000)}h ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
+
 function Percent({ value }: { value?: number | null }) {
   if (value == null || !Number.isFinite(value))
     return (
@@ -74,12 +57,26 @@ function Percent({ value }: { value?: number | null }) {
         —
       </span>
     );
+  const tone =
+    value >= 90 ? "critical" : value >= 75 ? "warning" : "steady";
   return (
     <span className="flex min-w-16 flex-col gap-1 tabular-nums">
-      <span>{value.toFixed(1)}%</span>
+      <span
+        className={cn(
+          tone === "critical" && "font-medium text-status-critical",
+          tone === "warning" && "font-medium text-status-warning",
+        )}
+      >
+        {value.toFixed(1)}%
+      </span>
       <span className="h-1 w-full rounded-full bg-muted" aria-hidden>
         <span
-          className="block h-1 rounded-full bg-primary"
+          className={cn(
+            "block h-1 rounded-full transition-[width] duration-150",
+            tone === "critical" && "bg-status-critical",
+            tone === "warning" && "bg-status-warning",
+            tone === "steady" && "bg-primary",
+          )}
           style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
         />
       </span>
@@ -106,11 +103,11 @@ export function AllServersPage() {
     "fleet:status",
     "all",
   );
-  const [labelFilter, setLabelFilter] = useRememberedState(
-    "fleet:label",
-    "all",
+  const [tags, setTags] = useRememberedState<string[]>(
+    "fleet:labels",
+    tagsFromStored(readPreference("fleet:label", "all")),
   );
-  const [sortKey, setSortKey] = useRememberedState<SortKey>(
+  const [sortKey, setSortKey] = useRememberedState<FleetSortKey>(
     "fleet:sort",
     "status",
   );
@@ -129,59 +126,37 @@ export function AllServersPage() {
   const labels = [
     ...new Set(servers.flatMap((server) => server.labels)),
   ].sort();
-  const rows = servers
-    .map((server) => {
-      const stored = byId.get(server.id),
-        live = metrics.get(server.id),
-        status = statusById.get(server.id)?.status ?? "disconnected";
-      const fresh = status === "connected" && live !== undefined;
-      return {
-        server,
-        status,
-        cpu: fresh ? live.cpuPercent : stored?.cpuPercent,
-        memory: fresh ? live.memoryPercent : stored?.memoryPercent,
-        disk: fresh ? live.diskPercent : stored?.diskPercent,
-        apps: stored?.appCount,
-        alerts: stored?.activeAlertCount,
-        lastSeen: stored?.lastSeenMs,
-      };
-    })
-    .filter(
-      (row) =>
-        (statusFilter === "all" || row.status === statusFilter) &&
-        (labelFilter === "all" || row.server.labels.includes(labelFilter)) &&
-        `${row.server.name} ${row.server.host} ${row.server.username} ${row.server.labels.join(" ")}`
-          .toLowerCase()
-          .includes(query.trim().toLowerCase()),
-    )
-    .sort((a, b) => {
-      if (sortKey === "name")
-        return (
-          (ascending ? 1 : -1) * a.server.name.localeCompare(b.server.name)
-        );
-      const first = sortKey === "status" ? STATUS_RANK[a.status] : a[sortKey];
-      const second = sortKey === "status" ? STATUS_RANK[b.status] : b[sortKey];
-      if (first == null || second == null)
-        return first == null && second == null
-          ? a.server.name.localeCompare(b.server.name)
-          : first == null
-            ? 1
-            : -1;
-      return (
-        (ascending ? 1 : -1) * (first - second) ||
-        a.server.name.localeCompare(b.server.name)
-      );
-    });
-  const groups = group
-    ? [...new Set(rows.map((row) => row.server.labels[0] ?? "Untagged"))]
-        .sort()
-        .map((label) => ({
-          label,
-          rows: rows.filter(
-            (row) => (row.server.labels[0] ?? "Untagged") === label,
-          ),
-        }))
-    : [{ label: "", rows }];
+  const tagOptions = [...new Set([...labels, ...tags])].sort();
+  const fleetRows = servers.map((server) => {
+    const stored = byId.get(server.id),
+      live = metrics.get(server.id),
+      status = statusById.get(server.id)?.status ?? "disconnected";
+    const fresh = status === "connected" && live !== undefined;
+    const row: FleetViewRow & { server: ServerRecord } = {
+      server,
+      id: server.id,
+      name: server.name,
+      host: server.host,
+      username: server.username,
+      labels: server.labels,
+      status,
+      cpu: fresh ? live.cpuPercent : stored?.cpuPercent,
+      memory: fresh ? live.memoryPercent : stored?.memoryPercent,
+      disk: fresh ? live.diskPercent : stored?.diskPercent,
+      apps: stored?.appCount,
+      alerts: stored?.activeAlertCount,
+      lastSeen: stored?.lastSeenMs,
+    };
+    return row;
+  });
+  const filters = { query, status: statusFilter, tags };
+  const rows = filterAndSortFleet(fleetRows, filters, sortKey, ascending);
+  const counts = statusCounts(
+    fleetRows.filter((row) =>
+      rowMatchesFilters(row, { query, status: "all", tags }),
+    ),
+  );
+  const groups = groupFleetRows(rows, group);
   const openPage = (id: string, page: string) => {
     setSelectedServerId(id);
     navigate(page);
@@ -204,12 +179,15 @@ export function AllServersPage() {
       summary.refresh();
     }
   };
-  const sort = (key: SortKey) => {
-    if (sortKey === key) setAscending((previous) => !previous);
-    else {
-      setSortKey(key);
-      setAscending(key !== "alerts");
-    }
+  const sort = (key: FleetSortKey) => {
+    const next = toggleFleetSort(sortKey, ascending, key);
+    setSortKey(next.sortKey);
+    setAscending(next.ascending);
+  };
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+    setTags([]);
   };
   const actions = (server: ServerRecord, status: string) => (
     <div
@@ -388,100 +366,25 @@ export function AllServersPage() {
               </Button>
             </Notice>
           )}
-          <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-4">
-            <div className="min-w-48 flex-1">
-              <Label htmlFor="fleet-search">Search servers or tags</Label>
-              <Input
-                id="fleet-search"
-                placeholder="Name, host, or tag"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fleet-status">Status</Label>
-              <SimpleSelect
-                id="fleet-status"
-                value={statusFilter}
-                onValueChange={setStatusFilter}
-                options={[
-                  { value: "all", label: "All statuses" },
-                  ...Object.entries(CONNECTION_STATUS_LABELS).map(
-                    ([value, label]) => ({ value, label }),
-                  ),
-                ]}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fleet-tag">Tag</Label>
-              <SimpleSelect
-                id="fleet-tag"
-                value={labelFilter}
-                onValueChange={setLabelFilter}
-                options={[
-                  { value: "all", label: "All tags" },
-                  ...labels.map((label) => ({ value: label, label })),
-                ]}
-              />
-            </div>
-            <div>
-              <Label htmlFor="fleet-sort">Sort by</Label>
-              <SimpleSelect
-                id="fleet-sort"
-                value={sortKey}
-                onValueChange={(value) => setSortKey(value as SortKey)}
-                options={COLUMNS.map((c) => ({ value: c.key, label: c.label }))}
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={ascending ? "Sort descending" : "Sort ascending"}
-              onClick={() => setAscending((previous) => !previous)}
-            >
-              {ascending ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
-            </Button>
-            <div className="flex gap-1" role="group" aria-label="Server layout">
-              <Button
-                size="icon"
-                variant={view === "grid" ? "secondary" : "ghost"}
-                aria-label="Grid view"
-                aria-pressed={view === "grid"}
-                onClick={() => setView("grid")}
-              >
-                <LayoutGrid aria-hidden />
-              </Button>
-              <Button
-                size="icon"
-                variant={view === "table" ? "secondary" : "ghost"}
-                aria-label="Table view"
-                aria-pressed={view === "table"}
-                onClick={() => setView("table")}
-              >
-                <List aria-hidden />
-              </Button>
-            </div>
-            <label className="flex min-h-9 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4 accent-primary"
-                checked={group}
-                onChange={(event) => setGroup(event.target.checked)}
-              />
-              Group by first tag
-            </label>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                setLabelFilter("all");
-                setStatusFilter("all");
-              }}
-            >
-              Clear filters
-            </Button>
-          </div>
+          <FleetToolbar
+            query={query}
+            onQueryChange={setQuery}
+            status={statusFilter}
+            onStatusChange={setStatusFilter}
+            counts={counts}
+            tags={tags}
+            onTagsChange={setTags}
+            tagOptions={tagOptions}
+            sortKey={sortKey}
+            ascending={ascending}
+            onSortKeyChange={setSortKey}
+            onAscendingChange={setAscending}
+            view={view}
+            onViewChange={setView}
+            group={group}
+            onGroupChange={setGroup}
+            onClear={clearFilters}
+          />
           <p role="status" className="text-xs text-muted-foreground">
             {rows.length} of {servers.length} servers · Filters and layout are
             remembered
@@ -491,14 +394,7 @@ export function AllServersPage() {
               title="No matching servers"
               description="Try another name, status, or tag."
               action={
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setQuery("");
-                    setStatusFilter("all");
-                    setLabelFilter("all");
-                  }}
-                >
+                <Button variant="outline" onClick={clearFilters}>
                   Clear filters
                 </Button>
               }
@@ -511,12 +407,10 @@ export function AllServersPage() {
               className="flex flex-col gap-3"
             >
               {section.label && (
-                <h3 className="font-semibold">
-                  {section.label}{" "}
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {section.rows.length}
-                  </span>
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium">{section.label}</h3>
+                  <Badge variant="secondary">{section.rows.length}</Badge>
+                </div>
               )}
               {view === "table" ? (
                 section.rows.length > 0 && (
@@ -524,19 +418,19 @@ export function AllServersPage() {
                     role="region"
                     aria-label={`${section.label || "All servers"} table`}
                     tabIndex={0}
-                    className="overflow-auto rounded-xl border border-border focus-visible:ring-2 focus-visible:ring-ring"
+                    className="overflow-auto rounded-xl border border-border focus-visible:ring-3 focus-visible:ring-ring"
                   >
                     <table className="w-full min-w-[1120px] text-left text-sm">
                       <caption className="sr-only">
                         Server health and quick actions
                       </caption>
-                      <thead className="bg-muted/50">
+                      <thead className="sticky top-0 z-10 bg-muted">
                         <tr>
-                          {COLUMNS.map((c) => (
+                          {FLEET_SORT_COLUMNS.map((c) => (
                             <th
                               scope="col"
                               key={c.key}
-                              className="p-3"
+                              className="p-2"
                               aria-sort={
                                 sortKey === c.key
                                   ? ascending
@@ -546,7 +440,8 @@ export function AllServersPage() {
                               }
                             >
                               <button
-                                className="flex items-center gap-1 rounded font-medium focus-visible:ring-2 focus-visible:ring-ring"
+                                type="button"
+                                className="flex h-8 items-center gap-1 rounded-md px-1 font-medium transition-colors duration-150 hover:bg-background/70 focus-visible:ring-3 focus-visible:ring-ring"
                                 onClick={() => sort(c.key)}
                               >
                                 {c.label}
@@ -559,7 +454,7 @@ export function AllServersPage() {
                               </button>
                             </th>
                           ))}
-                          <th scope="col" className="p-3 font-medium">
+                          <th scope="col" className="p-2 font-medium">
                             Quick actions
                           </th>
                         </tr>
@@ -568,26 +463,48 @@ export function AllServersPage() {
                         {section.rows.map((row) => (
                           <tr
                             key={row.server.id}
-                            className="border-t border-border"
+                            className="border-t border-border transition-colors duration-150 hover:bg-muted/40 focus-within:bg-muted/30"
                           >
                             <th
                               scope="row"
-                              className="max-w-56 p-3 font-normal"
+                              className="max-w-64 p-3 font-normal"
                             >
                               <button
-                                className="max-w-full truncate rounded font-semibold hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                                type="button"
+                                className="max-w-full truncate rounded-md text-left font-medium tracking-tight hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                                 onClick={() =>
                                   openPage(row.server.id, "/server")
                                 }
                               >
                                 {row.server.name}
                               </button>
-                              <p className="truncate text-xs text-muted-foreground">
+                              <p className="truncate font-mono text-xs text-muted-foreground">
                                 <Masked text={row.server.host} />
                               </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {row.server.labels.join(" · ")}
-                              </p>
+                              {row.server.labels.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {row.server.labels.map((label) => (
+                                    <Badge
+                                      key={label}
+                                      variant="outline"
+                                      className={cn(
+                                        "cursor-pointer transition-colors duration-150 hover:bg-muted",
+                                        tags.includes(label) && "bg-muted",
+                                      )}
+                                      render={
+                                        <button
+                                          type="button"
+                                          aria-pressed={tags.includes(label)}
+                                          aria-label={`Filter tag ${label}`}
+                                          onClick={() => setTags([label])}
+                                        />
+                                      }
+                                    >
+                                      {label}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
                             </th>
                             <td className="p-3">
                               <ConnectionStatusBadge status={row.status} />
@@ -645,12 +562,23 @@ export function AllServersPage() {
               ) : (
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
                   {section.rows.map((row) => (
-                    <Card key={row.server.id}>
-                      <CardHeader>
+                    <Card
+                      key={row.server.id}
+                      className="relative transition-shadow duration-150 hover:shadow-md focus-within:ring-3 focus-within:ring-ring"
+                    >
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "absolute inset-y-3 left-0 w-0.5 rounded-full",
+                          STRIPE[row.status],
+                        )}
+                      />
+                      <CardHeader className="flex flex-col gap-2">
                         <div className="flex items-start justify-between gap-3">
                           <CardTitle>
                             <button
-                              className="rounded text-left hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                              type="button"
+                              className="rounded-md text-left tracking-tight transition-colors duration-150 hover:underline focus-visible:ring-3 focus-visible:ring-ring"
                               onClick={() => openPage(row.server.id, "/server")}
                             >
                               {row.server.name}
@@ -658,32 +586,44 @@ export function AllServersPage() {
                           </CardTitle>
                           <ConnectionStatusBadge status={row.status} />
                         </div>
-                        <p className="truncate font-mono text-xs text-muted-foreground">
+                        <CardDescription className="truncate font-mono text-xs">
                           <Masked
                             text={`${row.server.username}@${row.server.host}:${row.server.port}`}
                           />
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {row.server.labels.map((label) => (
-                            <button
-                              key={label}
-                              onClick={() => setLabelFilter(label)}
-                              className="rounded-md border border-border bg-muted px-2 py-1 text-xs hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-                              aria-label={`Filter tag ${label}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
+                        </CardDescription>
+                        {row.server.labels.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {row.server.labels.map((label) => (
+                              <Badge
+                                key={label}
+                                variant="outline"
+                                className={cn(
+                                  "cursor-pointer transition-colors duration-150 hover:bg-muted",
+                                  tags.includes(label) && "bg-muted",
+                                )}
+                                render={
+                                  <button
+                                    type="button"
+                                    aria-pressed={tags.includes(label)}
+                                    aria-label={`Filter tag ${label}`}
+                                    onClick={() => setTags([label])}
+                                  />
+                                }
+                              >
+                                {label}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-4">
-                        <dl className="grid grid-cols-3 gap-4">
+                      <CardContent className="flex flex-col gap-3">
+                        <dl className="grid grid-cols-3 gap-3">
                           {[
                             ["CPU", row.cpu],
                             ["Memory", row.memory],
                             ["Disk", row.disk],
                           ].map(([label, value]) => (
-                            <div key={label}>
+                            <div key={String(label)} className="min-w-0">
                               <dt className="mb-1 text-xs text-muted-foreground">
                                 {label}
                               </dt>
@@ -695,10 +635,11 @@ export function AllServersPage() {
                             </div>
                           ))}
                         </dl>
-                        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
                           <Button
                             size="sm"
                             variant="link"
+                            aria-label={`Applications for ${row.server.name}`}
                             onClick={() => openPage(row.server.id, "/apps")}
                           >
                             {row.apps ?? "—"} apps
@@ -706,6 +647,7 @@ export function AllServersPage() {
                           <Button
                             size="sm"
                             variant="link"
+                            aria-label={`Alerts for ${row.server.name}`}
                             onClick={() => openPage(row.server.id, "/alerts")}
                           >
                             {row.alerts ?? "—"} active alerts
@@ -730,8 +672,10 @@ export function AllServersPage() {
                             />
                           </p>
                         )}
-                        {actions(row.server, row.status)}
                       </CardContent>
+                      <CardFooter className="flex-wrap gap-2">
+                        {actions(row.server, row.status)}
+                      </CardFooter>
                     </Card>
                   ))}
                 </div>

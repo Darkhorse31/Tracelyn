@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts",
+    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts src/lib/fleet-view.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -24,6 +24,7 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "cn": "^0.5.0",
     "lucide-react": "^1.61.0",
     "react": "^19.1.0",
