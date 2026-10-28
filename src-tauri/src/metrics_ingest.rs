@@ -83,6 +83,7 @@ pub fn evaluate_live_alerts(
     metrics: HashMap<String, f64>,
 ) {
     let state = app.state::<AppState>();
+    if crate::license::require_write().is_err() { return; }
     let metrics_for_intel = metrics.clone();
     let input = EvaluationInput {
         server_id: server_id.to_string(),

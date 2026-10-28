@@ -1,3 +1,5 @@
+import { AccountLicenseCard } from "@/components/account/account-license";
+import { UpdatesCard } from "@/components/account/updates";
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -61,6 +63,8 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <AccountLicenseCard />
+      <UpdatesCard />
       <Card>
         <CardHeader>
           <CardTitle>Getting started</CardTitle>

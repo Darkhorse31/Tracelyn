@@ -1,3 +1,4 @@
+import { useLicense } from "@/contexts/license-context";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Notice } from "@/components/status/notice";
@@ -10,6 +11,7 @@ import { useOpsMode } from "@/hooks/use-ops";
 import { opsSetSudoPassword, opsSudoConfigured } from "@/lib/ops-api";
 
 export function OperationsModeCard() {
+  const { license } = useLicense();
   const id = useId();
   const { enabled, loading, error, update } = useOpsMode();
   const { servers, selectedServerId } = useServersContext();
@@ -71,7 +73,7 @@ export function OperationsModeCard() {
             type="checkbox"
             className="size-4 accent-primary"
             checked={enabled}
-            disabled={loading || busy}
+            disabled={!license?.canWrite || loading || busy}
             onChange={async (event) => {
               setBusy(true);
               try {

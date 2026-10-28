@@ -85,6 +85,7 @@ pub fn intel_list_rules(state: State<AppState>) -> Result<Vec<IntelRule>, String
 
 #[tauri::command]
 pub fn intel_upsert_rule(state: State<AppState>, rule: IntelRule) -> Result<IntelRule, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let mut rule = rule;
     validate_rule(&rule)?;
@@ -104,6 +105,7 @@ pub fn intel_upsert_rule(state: State<AppState>, rule: IntelRule) -> Result<Inte
 
 #[tauri::command]
 pub fn intel_delete_rule(state: State<AppState>, id: String) -> Result<(), String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let db = state.metrics.lock();
     store::delete_rule(db.connection(), &id).map_err(err)
@@ -111,6 +113,7 @@ pub fn intel_delete_rule(state: State<AppState>, id: String) -> Result<(), Strin
 
 #[tauri::command]
 pub fn intel_evaluate(app: AppHandle, state: State<AppState>, server_id: String) -> Result<EvalOut, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let probes = stale_probes(&state, &server_id)?;
     let out = intel::run_for_server(&state, &server_id, &probes)?;
@@ -177,6 +180,7 @@ pub fn intel_list_channels(state: State<AppState>) -> Result<Vec<Channel>, Strin
 
 #[tauri::command]
 pub fn intel_upsert_channel(state: State<AppState>, input: ChannelWrite) -> Result<Channel, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     validate_channel(&input)?;
     let id = input.id.filter(|value| !value.trim().is_empty()).unwrap_or_else(store::new_id);
@@ -202,6 +206,7 @@ pub fn intel_upsert_channel(state: State<AppState>, input: ChannelWrite) -> Resu
 
 #[tauri::command]
 pub fn intel_delete_channel(state: State<AppState>, id: String) -> Result<(), String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     notify::delete_channel_secret(&id);
     let db = state.metrics.lock();
@@ -210,6 +215,7 @@ pub fn intel_delete_channel(state: State<AppState>, id: String) -> Result<(), St
 
 #[tauri::command]
 pub fn intel_test_channel(app: AppHandle, state: State<AppState>, id: String) -> Result<String, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let channel = {
         let db = state.metrics.lock();
@@ -548,6 +554,7 @@ pub fn intel_export_config(state: State<AppState>) -> Result<FileOut, String> {
 
 #[tauri::command]
 pub fn intel_import_config(state: State<AppState>, raw: String) -> Result<ImportSummary, String> {
+    crate::license::require_write()?;
     if raw.len() > 2_000_000 {
         return Err("config file is too large".into());
     }
@@ -655,6 +662,7 @@ pub fn intel_list_digests(state: State<AppState>) -> Result<Vec<DigestSpec>, Str
 
 #[tauri::command]
 pub fn intel_upsert_digest(state: State<AppState>, digest: DigestSpec) -> Result<DigestSpec, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let mut digest = digest;
     if digest.id.trim().is_empty() {
@@ -668,6 +676,7 @@ pub fn intel_upsert_digest(state: State<AppState>, digest: DigestSpec) -> Result
 
 #[tauri::command]
 pub fn intel_delete_digest(state: State<AppState>, id: String) -> Result<(), String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let db = state.metrics.lock();
     store::delete_digest(db.connection(), &id).map_err(err)
@@ -675,6 +684,7 @@ pub fn intel_delete_digest(state: State<AppState>, id: String) -> Result<(), Str
 
 #[tauri::command]
 pub fn intel_send_digest(app: AppHandle, state: State<AppState>, id: String) -> Result<String, String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let now = now_ms();
     let (digest, subject, body, channel) = {

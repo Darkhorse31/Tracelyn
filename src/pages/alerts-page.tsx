@@ -1,3 +1,4 @@
+import { useLicense } from "@/contexts/license-context";
 import { useId, useState } from "react";
 import {
   AlertTriangle,
@@ -157,6 +158,7 @@ function RuleSummary({ rule }: { rule: AlertRule }) {
 }
 
 export function AlertsPage() {
+  const { license } = useLicense();
   const { selectedServerId, servers } = useServersContext();
   const { rules, history, loading, error, saveRule, removeRule } = useAlerts(
     selectedServerId ?? undefined,
@@ -185,7 +187,7 @@ export function AlertsPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
-      <AlertTemplates />
+      <fieldset disabled={!license?.canWrite}><AlertTemplates /></fieldset>
       {error && (
         <Notice tone="critical" title="Could not load alerts">
           {error}
@@ -247,6 +249,7 @@ export function AlertsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label={`Edit ${rule.name}`}
+                            disabled={!license?.canWrite}
                             onClick={() => setEditingId(rule.id)}
                           >
                             <Pencil />
@@ -255,6 +258,7 @@ export function AlertsPage() {
                             variant="ghost"
                             size="icon-sm"
                             aria-label={`Delete ${rule.name}`}
+                            disabled={!license?.canWrite}
                             onClick={() => setPendingDelete(rule)}
                           >
                             <Trash2 />
@@ -358,7 +362,7 @@ export function AlertsPage() {
             <Button variant="outline" onClick={() => setPendingDelete(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <Button variant="destructive" disabled={!license?.canWrite || deleting} onClick={() => void confirmDelete()}>
               Delete rule
             </Button>
           </DialogFooter>

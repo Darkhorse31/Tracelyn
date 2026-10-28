@@ -202,6 +202,7 @@ pub fn ops_get_mode(state: State<AppState>) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn ops_set_mode(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
+    if enabled { crate::license::require_write()?; }
     {
         let store = state.metrics.lock();
         set_operations_enabled(store.connection(), enabled).map_err(map_err)?;
@@ -247,6 +248,7 @@ pub async fn ops_run(
     state: State<'_, AppState>,
     request: ActionRequest,
 ) -> Result<ActionOutcome, String> {
+    crate::license::require_write()?;
     if !mode_on(&state)? {
         return Err(read_only_error());
     }
@@ -409,6 +411,7 @@ pub async fn ops_terminal_open(
     state: State<'_, AppState>,
     request: TermOpen,
 ) -> Result<TermOpened, String> {
+    crate::license::require_write()?;
     if !mode_on(&state)? {
         return Err(read_only_error());
     }
@@ -425,6 +428,7 @@ pub async fn ops_terminal_open(
 
 #[tauri::command]
 pub async fn ops_terminal_write(state: State<'_, AppState>, request: TermWrite) -> Result<(), String> {
+    crate::license::require_write()?;
     if !mode_on(&state)? {
         return Err(read_only_error());
     }

@@ -1,3 +1,4 @@
+import { LicenseBanner } from "@/components/account/account-license";
 import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { AlertAnnouncer } from "@/components/alerts/alert-announcer";
@@ -64,6 +65,7 @@ export function AppShell() {
             tabIndex={-1}
             className="flex flex-1 flex-col gap-6 p-6 outline-none"
           >
+            <LicenseBanner />
             {loading ? (
               <PageSkeleton />
             ) : needsWelcome ? (

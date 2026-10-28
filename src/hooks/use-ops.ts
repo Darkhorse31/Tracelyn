@@ -1,8 +1,10 @@
+import { useLicense } from "@/contexts/license-context";
 import { useCallback, useEffect, useState } from "react";
 import { opsGetMode, opsSetMode } from "@/lib/ops-api";
 import { OPS_MODE_EVENT } from "@/lib/ops-types";
 
 export function useOpsMode() {
+  const { license } = useLicense();
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,5 +34,5 @@ export function useOpsMode() {
     window.dispatchEvent(new Event(OPS_MODE_EVENT));
   }, []);
 
-  return { enabled, loading, error, refresh, update };
+  return { enabled: enabled && Boolean(license?.canWrite), loading, error, refresh, update };
 }

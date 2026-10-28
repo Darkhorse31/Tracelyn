@@ -186,6 +186,7 @@ fn email_job(config: &ChannelConfig, channel_id: &str, title: &str, body: &str) 
 }
 
 pub fn deliver_job(job: &Job, notify_windows: &mut dyn FnMut(&str, &str, &str) -> Result<(), String>) -> Result<(), String> {
+    crate::license::require_write()?;
     match job {
         Job::Windows { title, body, path } => notify_windows(title, body, path),
         Job::Https { url, body } => https_post(url, body).map(|_| ()),

@@ -1,3 +1,4 @@
+import { useLicense } from "@/contexts/license-context";
 import { useSearchParams } from "react-router-dom";
 import { AnomalyPanel } from "@/components/intel/anomaly-panel";
 import { ChannelsPanel } from "@/components/intel/channels-panel";
@@ -23,6 +24,7 @@ function isTab(value: string | null): value is TabId {
 }
 
 export function IntelPage() {
+  const { license } = useLicense();
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
   const tab: TabId = isTab(requested) ? requested : "incidents";
@@ -73,10 +75,10 @@ export function IntelPage() {
       </div>
       <div role="tabpanel" id="intel-panel" tabIndex={0} aria-labelledby={`intel-tab-${tab}`}>
         {tab === "incidents" && <IncidentsPanel />}
-        {tab === "rules" && <RulesPanel />}
-        {tab === "channels" && <ChannelsPanel />}
+        {tab === "rules" && <fieldset disabled={!license?.canWrite} className="min-w-0"><RulesPanel /></fieldset>}
+        {tab === "channels" && <fieldset disabled={!license?.canWrite} className="min-w-0"><ChannelsPanel /></fieldset>}
         {tab === "anomalies" && <AnomalyPanel />}
-        {tab === "digest" && <DigestPanel />}
+        {tab === "digest" && <fieldset disabled={!license?.canWrite} className="min-w-0"><DigestPanel /></fieldset>}
         {tab === "sharing" && <SharingPanel />}
       </div>
     </div>

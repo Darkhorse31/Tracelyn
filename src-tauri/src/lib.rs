@@ -1,3 +1,4 @@
+mod license;
 mod alerts;
 mod crash;
 mod apps;
@@ -48,12 +49,15 @@ pub fn run() {
     let app_state = AppState::new(config, host_keys, event_hub.clone(), connections);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .manage(infra::InfraState::default())
         .setup(|app| {
+            license::setup(app.handle()).map_err(std::io::Error::other)?;
             let handle = app.handle().clone();
             let hub = app.state::<AppState>().event_hub.clone();
             hub.set_app(handle.clone());
@@ -79,6 +83,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            license::license_status,
+            license::license_activate,
+            license::license_deactivate,
             commands::fleet::preview_server_import,
             commands::fleet::export_server_profiles,
             commands::fleet::import_server_profiles,

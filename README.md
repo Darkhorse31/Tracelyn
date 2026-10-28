@@ -31,3 +31,7 @@ cd src-tauri && cargo check
 - Design spec: `docs/specs/2026-10-23-serverlens-design.md`
 - Phase 1 plan: `docs/plans/2026-10-23-phase1-plan.md`
 - Progress: `docs/progress.md`
+
+## Licensing and releases
+
+See [release setup](docs/RELEASE.md) and [signed updater setup](docs/UPDATER.md). Use `npm run tauri build` for a local installer with no signing secrets. Use `npm run tauri:release` when the updater private key is set.

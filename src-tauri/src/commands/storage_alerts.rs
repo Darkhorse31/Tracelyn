@@ -58,6 +58,7 @@ pub fn list_alert_rules(state: State<AppState>) -> Result<Vec<AlertRule>, String
 
 #[tauri::command]
 pub fn upsert_alert_rule(state: State<AppState>, rule: AlertRule) -> Result<AlertRule, String> {
+    crate::license::require_write()?;
     let store = state.metrics.lock();
     upsert_rule(store.connection(), &rule).map_err(map_err)?;
     Ok(rule)
@@ -65,6 +66,7 @@ pub fn upsert_alert_rule(state: State<AppState>, rule: AlertRule) -> Result<Aler
 
 #[tauri::command]
 pub fn delete_alert_rule(state: State<AppState>, id: String) -> Result<(), String> {
+    crate::license::require_write()?;
     let store = state.metrics.lock();
     delete_rule(store.connection(), &id).map_err(map_err)
 }

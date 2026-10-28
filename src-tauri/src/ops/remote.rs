@@ -327,6 +327,10 @@ async fn pump_terminal(
                         break;
                     }
                     Some(TermCmd::Data(bytes)) => {
+                        if crate::license::require_write().is_err() {
+                            let _ = channel.close().await;
+                            break;
+                        }
                         if channel.data(Cursor::new(bytes)).await.is_err() {
                             break;
                         }

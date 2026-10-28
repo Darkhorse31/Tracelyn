@@ -1,3 +1,4 @@
+import { useLicense } from "@/contexts/license-context";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ function intelDraft(template: Template): IntelRule {
 }
 
 export function AlertTemplates({ onChanged }: { onChanged?: () => void }) {
+  const { license } = useLicense();
   const [intel, setIntel] = useState<IntelRule[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -139,7 +141,7 @@ export function AlertTemplates({ onChanged }: { onChanged?: () => void }) {
                     size="sm"
                     variant={on ? "default" : "outline"}
                     aria-pressed={on}
-                    disabled={busy === template.title}
+                    disabled={!license?.canWrite || busy === template.title}
                     onClick={() => void toggle(template)}
                   >
                     {on ? "On" : "Off"}

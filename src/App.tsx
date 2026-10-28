@@ -1,3 +1,5 @@
+import { LicenseProvider } from "@/contexts/license-context";
+import { UpdatesProvider } from "@/components/account/updates";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/app-shell";
 import { InfraPage, SECTIONS, type Section } from "@/pages/infra/infra-page";
@@ -35,7 +37,7 @@ function HomePage() {
 
 function App() {
   return (
-    <ServersProvider>
+    <LicenseProvider><UpdatesProvider><ServersProvider>
       <PrivacyProvider>
       <BrowserRouter>
         <Routes>
@@ -71,7 +73,7 @@ function App() {
         </Routes>
       </BrowserRouter>
       </PrivacyProvider>
-    </ServersProvider>
+    </ServersProvider></UpdatesProvider></LicenseProvider>
   );
 }
 
