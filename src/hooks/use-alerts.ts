@@ -62,6 +62,14 @@ export function useAlerts(serverId?: string) {
     [refresh],
   );
 
+  const silenceRule = useCallback(
+    async (id: string) => {
+      await alertsApi.silenceAlertRule(id);
+      await refresh({ quiet: true });
+    },
+    [refresh],
+  );
+
   return {
     rules,
     history,
@@ -70,5 +78,6 @@ export function useAlerts(serverId?: string) {
     refresh,
     saveRule,
     removeRule,
+    silenceRule,
   };
 }

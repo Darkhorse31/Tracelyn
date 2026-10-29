@@ -319,6 +319,20 @@ async fn poll(
                 .unwrap_or((&output.text, ""));
             let mut rows = cron::parse(cron_text, now);
             rows.extend(cron::timers(timers));
+            if let Some(journal) = output.text.split("__JOURNAL__").nth(1) {
+                let state = app.state::<AppState>();
+                let db = state.metrics.lock();
+                for (ts, label, detail) in crate::alerts::parse_cron_journal(journal) {
+                    let _ = crate::alerts::AlertHistoryStore::record_marker(
+                        db.connection(),
+                        server,
+                        ts,
+                        "cron",
+                        &label,
+                        &detail,
+                    );
+                }
+            }
             Ok(rows)
         }
         "capacity" => Ok(parsers::disks(&output.text)),

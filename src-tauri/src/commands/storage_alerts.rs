@@ -1,4 +1,7 @@
-use crate::alerts::{AlertEventRecord, AlertHistoryStore, AlertRule, delete_rule, list_rules, upsert_rule};
+use crate::alerts::{
+    delete_rule, list_rules, silence_rule, upsert_rule, AlertEventRecord, AlertHistoryStore, AlertRule,
+    ChartMarker,
+};
 use crate::state::AppState;
 use crate::storage::{query_metrics, QueryResult, RetentionConfig};
 use serde::Deserialize;
@@ -113,4 +116,57 @@ pub fn list_alert_history(
         limit.unwrap_or(100),
     )
     .map_err(map_err)
+}
+
+#[tauri::command]
+pub fn list_chart_markers(
+    state: State<AppState>,
+    server_id: String,
+    start_ms: i64,
+    end_ms: i64,
+) -> Result<Vec<ChartMarker>, String> {
+    let store = state.metrics.lock();
+    AlertHistoryStore::migrate(store.connection()).map_err(map_err)?;
+    AlertHistoryStore::list_markers(store.connection(), &server_id, start_ms, end_ms).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn silence_alert_rule(state: State<AppState>, id: String) -> Result<AlertRule, String> {
+    crate::license::require_write()?;
+    let until = crate::metrics_ingest::now_ms() + 3_600_000;
+    let store = state.metrics.lock();
+    silence_rule(store.connection(), &id, until).map_err(map_err)
+}
+
+#[tauri::command]
+pub fn alert_test_send(app: tauri::AppHandle, state: State<AppState>) -> Result<String, String> {
+    crate::license::require_write()?;
+    crate::intel::migrate(state.metrics.lock().connection()).map_err(map_err)?;
+    let channels = {
+        let db = state.metrics.lock();
+        crate::intel::store::list_channels(db.connection()).map_err(map_err)?
+    };
+    let enabled: Vec<_> = channels.into_iter().filter(|channel| channel.enabled).collect();
+    if enabled.is_empty() {
+        return Err("Add a delivery channel on the Intelligence page first.".into());
+    }
+    let (jobs, mut errors) = crate::intel::notify::build_jobs(
+        &enabled,
+        "Tracelyn test",
+        "Test notification. If you can read this, delivery works.",
+        "/alerts",
+    );
+    if jobs.is_empty() {
+        return Err(if errors.is_empty() {
+            "No channel could accept the test.".into()
+        } else {
+            errors.join(". ")
+        });
+    }
+    errors.extend(crate::intel::deliver_now(&app, &jobs));
+    if errors.is_empty() {
+        Ok(format!("Sent a test through {} channel(s).", jobs.len()))
+    } else {
+        Err(errors.join(". "))
+    }
 }

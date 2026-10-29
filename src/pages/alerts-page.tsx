@@ -32,7 +32,48 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAlerts } from "@/hooks/use-alerts";
 import { useServersContext } from "@/contexts/servers-context";
-import type { AlertRule } from "@/lib/alerts-types";
+import { alertTestSend } from "@/lib/alerts-api";
+import type { AlertRule, RuleKind } from "@/lib/alerts-types";
+import { usePrivacy } from "@/contexts/privacy-context";
+
+const KINDS: { value: RuleKind; label: string }[] = [
+  { value: "cpu_high", label: "CPU" },
+  { value: "memory_high", label: "Memory" },
+  { value: "disk_high", label: "Disk" },
+  { value: "http_5xx_rate", label: "HTTP 5xx rate" },
+  { value: "endpoint_p95", label: "Endpoint p95" },
+  { value: "server_unreachable", label: "Server unreachable" },
+  { value: "redis_memory_near_max", label: "Redis memory" },
+  { value: "log_query", label: "Log query" },
+  { value: "trace_p95", label: "Trace p95" },
+  { value: "trace_error_rate", label: "Trace error rate" },
+];
+
+function minutesToTime(min?: number | null): string {
+  if (min == null) return "";
+  const hours = Math.floor(min / 60) % 24;
+  const minutes = min % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function timeToMinutes(value: string): number | undefined {
+  if (!value) return undefined;
+  const [hours, minutes] = value.split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return undefined;
+  return hours * 60 + minutes;
+}
+
+function blankRule(): AlertRule {
+  return {
+    id: crypto.randomUUID(),
+    kind: "log_query",
+    name: "",
+    enabled: true,
+    params: { threshold: 1, durationSecs: 0, windowSecs: 60, cooldownSecs: 300, conditions: [] },
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+  };
+}
 
 function formatTs(ms: number) {
   return new Date(ms).toLocaleString(undefined, {
@@ -55,12 +96,15 @@ function RuleEditor({
   const id = useId();
   const [draft, setDraft] = useState(rule);
   const [saving, setSaving] = useState(false);
+  const conditions = draft.params.conditions ?? [];
   const invalid =
     !draft.name.trim() ||
     !Number.isFinite(draft.params.threshold) ||
     (draft.params.clearThreshold != null && !Number.isFinite(draft.params.clearThreshold)) ||
     !Number.isFinite(draft.params.durationSecs ?? 0) ||
-    (draft.params.durationSecs ?? 0) < 0;
+    (draft.params.durationSecs ?? 0) < 0 ||
+    (draft.kind === "log_query" && !draft.params.logQuery?.trim()) ||
+    conditions.some((condition) => !condition.metricKey.trim() || !Number.isFinite(condition.threshold));
 
   const setParam = (key: "threshold" | "clearThreshold" | "durationSecs", raw: string) =>
     setDraft({
@@ -116,7 +160,22 @@ function RuleEditor({
         />
       </div>
       <div className="grid gap-2">
-        <Label htmlFor={`${id}-duration`}>Sustained for (seconds)</Label>
+        <Label htmlFor={`${id}-kind`}>Kind</Label>
+        <select
+          id={`${id}-kind`}
+          className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm"
+          value={draft.kind}
+          onChange={(e) => setDraft({ ...draft, kind: e.target.value as RuleKind })}
+        >
+          {KINDS.map((kind) => (
+            <option key={kind.value} value={kind.value}>
+              {kind.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-duration`}>For (seconds)</Label>
         <Input
           id={`${id}-duration`}
           type="number"
@@ -126,6 +185,177 @@ function RuleEditor({
           onChange={(e) => setParam("durationSecs", e.target.value)}
         />
       </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-cooldown`}>Cooldown (seconds)</Label>
+        <Input
+          id={`${id}-cooldown`}
+          type="number"
+          min={0}
+          className="font-mono"
+          value={draft.params.cooldownSecs ?? 0}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              params: { ...draft.params, cooldownSecs: Number(e.target.value) },
+            })
+          }
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-window`}>Log window (seconds)</Label>
+        <Input
+          id={`${id}-window`}
+          type="number"
+          min={1}
+          className="font-mono"
+          value={draft.params.windowSecs ?? 60}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              params: { ...draft.params, windowSecs: Number(e.target.value) },
+            })
+          }
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-quiet-start`}>Quiet hours start</Label>
+        <Input
+          id={`${id}-quiet-start`}
+          type="time"
+          value={minutesToTime(draft.params.quietStartMin)}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              params: { ...draft.params, quietStartMin: timeToMinutes(e.target.value) ?? null },
+            })
+          }
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${id}-quiet-end`}>Quiet hours end</Label>
+        <Input
+          id={`${id}-quiet-end`}
+          type="time"
+          value={minutesToTime(draft.params.quietEndMin)}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              params: { ...draft.params, quietEndMin: timeToMinutes(e.target.value) ?? null },
+            })
+          }
+        />
+      </div>
+      {draft.kind === "log_query" && (
+        <div className="grid gap-2 md:col-span-2">
+          <Label htmlFor={`${id}-query`}>Log query</Label>
+          <Input
+            id={`${id}-query`}
+            className="font-mono"
+            value={draft.params.logQuery ?? ""}
+            placeholder={'level:error "payment failed"'}
+            onChange={(e) =>
+              setDraft({ ...draft, params: { ...draft.params, logQuery: e.target.value } })
+            }
+          />
+        </div>
+      )}
+      {(draft.kind === "trace_p95" || draft.kind === "trace_error_rate") && (
+        <div className="grid gap-2 md:col-span-2">
+          <Label htmlFor={`${id}-endpoint`}>Endpoint</Label>
+          <Input
+            id={`${id}-endpoint`}
+            className="font-mono"
+            value={draft.params.endpoint ?? ""}
+            placeholder="GET /api/orders"
+            onChange={(e) =>
+              setDraft({ ...draft, params: { ...draft.params, endpoint: e.target.value } })
+            }
+          />
+        </div>
+      )}
+      <div className="flex flex-col gap-2 md:col-span-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">Conditions</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                params: {
+                  ...draft.params,
+                  conditions: [...conditions, { metricKey: "cpu.percent", op: "gte", threshold: 80 }],
+                },
+              })
+            }
+          >
+            Add condition
+          </Button>
+        </div>
+        {conditions.map((condition, index) => (
+          <div key={`${condition.metricKey}-${index}`} className="grid grid-cols-[1fr_5rem_6rem_auto] items-center gap-2">
+            <Input
+              aria-label={`Condition ${index + 1} metric`}
+              className="font-mono"
+              value={condition.metricKey}
+              onChange={(e) => {
+                const next = conditions.slice();
+                next[index] = { ...condition, metricKey: e.target.value };
+                setDraft({ ...draft, params: { ...draft.params, conditions: next } });
+              }}
+            />
+            <select
+              aria-label={`Condition ${index + 1} operator`}
+              className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm"
+              value={condition.op}
+              onChange={(e) => {
+                const next = conditions.slice();
+                next[index] = { ...condition, op: e.target.value };
+                setDraft({ ...draft, params: { ...draft.params, conditions: next } });
+              }}
+            >
+              <option value="gte">≥</option>
+              <option value="lte">≤</option>
+              <option value="gt">&gt;</option>
+              <option value="lt">&lt;</option>
+            </select>
+            <Input
+              aria-label={`Condition ${index + 1} threshold`}
+              type="number"
+              className="font-mono"
+              value={condition.threshold}
+              onChange={(e) => {
+                const next = conditions.slice();
+                next[index] = { ...condition, threshold: Number(e.target.value) };
+                setDraft({ ...draft, params: { ...draft.params, conditions: next } });
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const next = conditions.filter((_, item) => item !== index);
+                setDraft({ ...draft, params: { ...draft.params, conditions: next } });
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+      </div>
+      <label className="flex min-h-6 w-fit cursor-pointer items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={Boolean(draft.params.alertOnNoData)}
+          onChange={(e) =>
+            setDraft({ ...draft, params: { ...draft.params, alertOnNoData: e.target.checked } })
+          }
+          className="size-4 accent-primary"
+        />
+        Alert when there is no data
+      </label>
       <label className="flex min-h-6 w-fit cursor-pointer items-center gap-2 text-sm md:col-span-2">
         <input
           type="checkbox"
@@ -148,23 +378,30 @@ function RuleEditor({
 }
 
 function RuleSummary({ rule }: { rule: AlertRule }) {
-  const { threshold, clearThreshold, durationSecs } = rule.params;
+  const { threshold, clearThreshold, durationSecs, cooldownSecs, conditions } = rule.params;
   return (
     <p className="font-mono text-xs text-muted-foreground">
       fire ≥ {threshold}
       {clearThreshold != null && ` · clear < ${clearThreshold}`}
       {durationSecs ? ` · for ${durationSecs} s` : ""}
+      {cooldownSecs ? ` · cooldown ${cooldownSecs} s` : ""}
+      {conditions && conditions.length > 0 ? ` · ${conditions.length} conditions` : ""}
+      {rule.params.logQuery ? ` · ${rule.params.logQuery}` : ""}
+      {rule.params.endpoint ? ` · ${rule.params.endpoint}` : ""}
     </p>
   );
 }
 
 export function AlertsPage() {
   const { license } = useLicense();
+  const { mask } = usePrivacy();
   const { selectedServerId, servers } = useServersContext();
-  const { rules, history, loading, error, saveRule, removeRule } = useAlerts(
+  const { rules, history, loading, error, saveRule, removeRule, silenceRule } = useAlerts(
     selectedServerId ?? undefined,
   );
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState<AlertRule | null>(null);
+  const [testing, setTesting] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyState, setHistoryState] = useState<"all" | "active" | "resolved">("all");
   const [pendingDelete, setPendingDelete] = useState<AlertRule | null>(null);
@@ -192,6 +429,9 @@ export function AlertsPage() {
         title="Alerts"
         description="Rules fire after a threshold holds, then clear below the recovery value."
       />
+      <Notice tone="info" title="Alerts run only while Tracelyn is open">
+        Rules are checked on this computer. Close the app and they stop firing until you open it again.
+      </Notice>
       <fieldset disabled={!license?.canWrite}><AlertTemplates /></fieldset>
       {error && (
         <Notice tone="critical" title="Could not load alerts">
@@ -206,11 +446,57 @@ export function AlertsPage() {
               Alert rules
             </CardTitle>
             <CardDescription className="text-xs">
-              Rules fire after the threshold is held for the duration and clear below the
-              clear threshold, which reduces flapping.
+              A rule fires after the value stays at or above the threshold for the duration you set.
+              Quiet hours, cooldown, and silence hold the notification. The check still runs.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={!license?.canWrite}
+                onClick={() => {
+                  setEditingId(null);
+                  setCreating(blankRule());
+                }}
+              >
+                New monitor
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!license?.canWrite || testing}
+                onClick={async () => {
+                  setTesting(true);
+                  try {
+                    toast.success(await alertTestSend());
+                  } catch (err) {
+                    toast.error(String(err));
+                  } finally {
+                    setTesting(false);
+                  }
+                }}
+              >
+                Send test
+              </Button>
+            </div>
+            {creating && (
+              <RuleEditor
+                rule={creating}
+                onSave={async (r) => {
+                  try {
+                    await saveRule(r);
+                    toast.success(`Saved rule "${r.name}"`);
+                    setCreating(null);
+                  } catch (err) {
+                    toast.error("Could not save rule", { description: String(err) });
+                  }
+                }}
+                onCancel={() => setCreating(null)}
+              />
+            )}
             {loading ? (
               <div className="flex flex-col gap-2">
                 {Array.from({ length: 4 }, (_, i) => (
@@ -246,6 +532,8 @@ export function AlertsPage() {
                               {rule.enabled ? <BellRing aria-hidden /> : <BellOff aria-hidden />}
                               {rule.enabled ? "Enabled" : "Disabled"}
                             </Badge>
+                            {rule.firing && <Badge>Firing</Badge>}
+                            {rule.noData && <Badge variant="outline">No data</Badge>}
                           </div>
                           <RuleSummary rule={rule} />
                         </div>
@@ -258,6 +546,21 @@ export function AlertsPage() {
                             onClick={() => setEditingId(rule.id)}
                           >
                             <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!license?.canWrite}
+                            onClick={async () => {
+                              try {
+                                await silenceRule(rule.id);
+                                toast.success(`Silenced "${rule.name}" for 1 hour`);
+                              } catch (err) {
+                                toast.error(String(err));
+                              }
+                            }}
+                          >
+                            Silence for 1 hour
                           </Button>
                           <Button
                             variant="ghost"
@@ -338,13 +641,32 @@ export function AlertsPage() {
                             </Badge>
                           )}
                         </div>
-                        <p className="mt-1 text-sm text-muted-foreground">{evt.message}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{mask(evt.message)}</p>
                         <p className="mt-2 font-mono text-xs text-muted-foreground">
                           {!selectedServerId && `${serverName(evt.serverId)} · `}
                           {formatTs(evt.firedAtMs)}
                           {evt.resolvedAtMs && ` → ${formatTs(evt.resolvedAtMs)}`}
                         </p>
                         <AlertQuickActions serverId={evt.serverId} />
+                        {active && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2"
+                            disabled={!license?.canWrite}
+                            onClick={async () => {
+                              try {
+                                await silenceRule(evt.ruleId);
+                                toast.success("Silenced for 1 hour");
+                              } catch (err) {
+                                toast.error(String(err));
+                              }
+                            }}
+                          >
+                            Silence for 1 hour
+                          </Button>
+                        )}
                       </li>
                     );
                   })}

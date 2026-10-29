@@ -15,6 +15,8 @@ struct DockerPsLine {
     ports: Option<String>,
     #[serde(rename = "Labels", alias = "Label", default)]
     label: Option<String>,
+    #[serde(rename = "Image", default)]
+    image: Option<String>,
 }
 
 pub fn parse_docker_ps_json_lines(server_id: &str, text: &str) -> Vec<TracelynApp> {
@@ -57,6 +59,9 @@ fn docker_row_to_app(server_id: &str, row: DockerPsLine) -> TracelynApp {
     let mut tags = vec!["docker".to_string()];
     if oom {
         tags.push("oom".into());
+    }
+    if let Some(image) = row.image.as_deref().map(str::trim).filter(|image| !image.is_empty()) {
+        tags.push(format!("image:{image}"));
     }
     if let Some(labels) = &row.label {
         for part in labels.split(',') {
@@ -131,5 +136,8 @@ mod tests {
         let apps = parse_docker_ps_json_lines("s1", fixture);
         assert_eq!(apps.len(), 2);
         assert_eq!(apps[0].ports, vec![3000]);
+        let with_image = r#"{"ID":"abc","Names":"/web","State":"running","Ports":"","Image":"ghcr.io/app:1.2.3"}"#;
+        let tagged = parse_docker_ps_json_lines("s1", with_image);
+        assert!(tagged[0].tags.iter().any(|tag| tag == "image:ghcr.io/app:1.2.3"));
     }
 }

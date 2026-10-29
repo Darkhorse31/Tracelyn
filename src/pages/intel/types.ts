@@ -55,7 +55,8 @@ export type ChannelKind =
   | "teams"
   | "telegram"
   | "email"
-  | "webhook";
+  | "webhook"
+  | "ntfy";
 
 export interface ChannelConfig {
   chatId: string;
@@ -202,6 +203,7 @@ export const CHANNEL_LABELS: Record<ChannelKind, string> = {
   telegram: "Telegram",
   email: "Email (SMTP)",
   webhook: "Webhook",
+  ntfy: "ntfy",
 };
 
 export const METRIC_KEYS = [

@@ -100,6 +100,14 @@ fn teams_body(text: &str) -> String {
     json!({ "text": clip_chars(text, 3000) }).to_string()
 }
 
+fn ntfy_body(title: &str, text: &str) -> String {
+    json!({
+        "title": clip_chars(title, 200),
+        "message": clip_chars(text, 3500)
+    })
+    .to_string()
+}
+
 fn webhook_body(title: &str, text: &str) -> String {
     json!({
         "source": "tracelyn",
@@ -151,6 +159,16 @@ pub fn build_jobs(channels: &[Channel], title: &str, body: &str, path: &str) -> 
                     _ => errors.push(format!("{}: bot token and chat id are required", channel.name)),
                 }
             }
+            "ntfy" => match get_channel_secret(&channel.id) {
+                Some(url) => match validate_https_url(&url) {
+                    Ok(()) => jobs.push(Job::Https {
+                        url,
+                        body: ntfy_body(title, &text),
+                    }),
+                    Err(err) => errors.push(format!("{}: {err}", channel.name)),
+                },
+                None => errors.push(format!("{}: save the ntfy topic URL first", channel.name)),
+            },
             "email" => match email_job(&channel.config, &channel.id, title, body) {
                 Ok(job) => jobs.push(job),
                 Err(err) => errors.push(format!("{}: {err}", channel.name)),
@@ -459,6 +477,14 @@ mod tests {
         assert!(raw.contains("\r\n..secret\r\n"));
         assert!(raw.ends_with(".\r\n"));
         assert!(!raw.contains("password"));
+    }
+
+    #[test]
+    fn ntfy_body_carries_title_and_message() {
+        let raw = ntfy_body("CPU", "host is hot");
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["title"], "CPU");
+        assert_eq!(value["message"], "host is hot");
     }
 
     #[test]

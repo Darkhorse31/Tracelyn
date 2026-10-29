@@ -192,6 +192,15 @@ fn write_audit(
     };
     let store = state.metrics.lock();
     record(store.connection(), &row).map_err(map_err)?;
+    let detail = format!("{target}: {command}");
+    let _ = crate::alerts::AlertHistoryStore::record_marker(
+        store.connection(),
+        server_id,
+        row.ts_ms,
+        "ops",
+        target,
+        &detail,
+    );
     Ok(id)
 }
 

@@ -49,8 +49,9 @@ export function IncidentsPanel() {
         <div>
           <CardTitle className="text-base">Incidents</CardTitle>
           <CardDescription>
-            Open alerts on the same server within 30 minutes share one incident. The timeline also
-            includes PM2 restart jumps, anomalies, notes, and acknowledgements.
+            Open alerts on the same server within 30 minutes share one incident. The timeline
+            gathers the alert, anomalies, new error patterns, restarts, deploys, and audit actions
+            from 15 minutes on either side.
           </CardDescription>
         </div>
         <div className="flex flex-wrap justify-end gap-2" role="group" aria-label="Incident filters">

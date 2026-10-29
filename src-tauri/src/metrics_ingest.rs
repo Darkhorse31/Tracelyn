@@ -1,6 +1,6 @@
 //! Persist live collector samples and run SQLite maintenance.
 
-use crate::alerts::{AlertEngine, EvaluationInput};
+use crate::alerts::{AlertEngine, EvaluationInput, LogSample};
 use crate::collectors::redis::RedisSnapshot;
 use crate::metrics::OverviewServerMetrics;
 use crate::state::AppState;
@@ -58,6 +58,40 @@ pub fn samples_from_redis(server_id: &str, snap: &RedisSnapshot) -> Vec<RawSampl
     out
 }
 
+fn log_samples(state: &AppState, server_id: &str) -> Vec<LogSample> {
+    let Some(snapshot) = state.event_hub.last_log_snapshot(server_id) else {
+        return Vec::new();
+    };
+    let apps = state.apps_for_server(server_id);
+    snapshot
+        .lines
+        .iter()
+        .rev()
+        .take(400)
+        .map(|line| {
+            let ids = crate::logs::trace::extract_trace_ids(&line.raw);
+            let app = line
+                .app_id
+                .as_deref()
+                .and_then(|id| apps.iter().find(|app| app.id == id))
+                .map(|app| app.name.clone())
+                .or(line.app_id.clone())
+                .unwrap_or_default();
+            LogSample {
+                raw: line.raw.clone(),
+                level: line.level.as_str().into(),
+                message: line.message.clone(),
+                app,
+                source: line.source_id.clone(),
+                status: line.http_status.map(|status| status as f64),
+                trace_id: ids.trace_id.unwrap_or_default(),
+                span_id: ids.span_id.unwrap_or_default(),
+                ts_ms: line.ts_ms as i64,
+            }
+        })
+        .collect()
+}
+
 fn raw(server_id: &str, key: &str, ts_ms: i64, value: f64) -> RawSample {
     RawSample {
         server_id: server_id.to_string(),
@@ -84,12 +118,27 @@ pub fn evaluate_live_alerts(
 ) {
     let state = app.state::<AppState>();
     if crate::license::require_write().is_err() { return; }
+    let mut metrics = metrics;
+    if let Some(apm) = state.event_hub.last_apm_snapshot(server_id) {
+        for endpoint in apm.endpoints {
+            metrics.insert(format!("trace.{}.p95_ms", endpoint.route), endpoint.p95_ms);
+            metrics.insert(
+                format!("trace.{}.error_rate", endpoint.route),
+                endpoint.error_rate * 100.0,
+            );
+        }
+    }
+    let logs_available = state.event_hub.last_log_snapshot(server_id).is_some();
+    let logs = log_samples(&state, server_id);
     let metrics_for_intel = metrics.clone();
     let input = EvaluationInput {
         server_id: server_id.to_string(),
         ts_ms: now_ms(),
         metrics,
         connected,
+        utc_offset_secs: chrono::Local::now().offset().local_minus_utc(),
+        logs,
+        logs_available,
     };
     let outcome = {
         let store = state.metrics.lock();

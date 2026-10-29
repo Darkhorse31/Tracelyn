@@ -58,7 +58,7 @@ export function ChannelsPanel() {
         <div>
           <CardTitle className="text-base">Channels</CardTitle>
           <CardDescription>
-            Windows notifications, Slack, Discord, Teams, Telegram, SMTP email, and a generic webhook.
+            Windows notifications, Slack, Discord, Teams, Telegram, ntfy, SMTP email, and a generic webhook.
             URLs, bot tokens, and SMTP passwords are stored in Windows Credential Manager, not in the
             config file.
           </CardDescription>
@@ -185,7 +185,9 @@ function ChannelDialog({
       ? "Bot token"
       : draft.kind === "email"
         ? "SMTP password"
-        : "Webhook URL";
+        : draft.kind === "ntfy"
+          ? "Topic URL"
+          : "Webhook URL";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

@@ -12,6 +12,20 @@ pub enum LogLevel {
     Unknown,
 }
 
+impl LogLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+            Self::Fatal => "fatal",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 pub fn detect_level(line: &str) -> LogLevel {
     infer_level(line, None)
 }

@@ -101,6 +101,7 @@ pub fn run(conn: &Connection, sample: &Sample<'_>) -> Result<CycleOut, IntelErro
     }
     observe_restarts(&tx, sample)?;
     out.notices.extend(fold_alerts(&tx, sample)?);
+    refresh_windows(&tx, sample)?;
     tx.commit()?;
     if out.notices.len() > 10 {
         out.notices.truncate(10);
@@ -296,6 +297,10 @@ fn new_error_count(conn: &Connection, sample: &Sample<'_>) -> Result<Option<f64>
         };
         if store::remember_error(conn, sample.server_id, &signature)? {
             unseen += 1;
+            if known {
+                let message = format!("New error pattern: {signature}");
+                store::add_feed(conn, sample.server_id, line.ts_ms, "error", &message)?;
+            }
         }
     }
     Ok(Some(new_error_value(known, unseen)))
@@ -313,6 +318,17 @@ fn deploy_value(conn: &Connection, rule: &IntelRule, sample: &Sample<'_>) -> Res
         let previous = store::take_version(conn, sample.server_id, &app.id, &app.version)?;
         if deploy_detected(previous.as_deref(), &app.version) {
             hit = true;
+            let previous = previous.unwrap_or_default();
+            let message = format!("Deploy {} {previous} → {}", app.name, app.version);
+            store::add_feed(conn, sample.server_id, sample.ts_ms, "deploy", &message)?;
+            let _ = crate::alerts::AlertHistoryStore::record_marker(
+                conn,
+                sample.server_id,
+                sample.ts_ms,
+                "deploy",
+                &app.name,
+                &message,
+            );
         }
     }
     Ok(Some(if hit { 1.0 } else { 0.0 }))
@@ -403,6 +419,19 @@ fn alert_message(rule: &IntelRule, server_name: &str, value: f64) -> String {
     format!("{server_name}: {detail}")
 }
 
+fn refresh_windows(conn: &Connection, sample: &Sample<'_>) -> Result<(), IntelError> {
+    for incident in store::list_incidents(conn, Some(sample.server_id))? {
+        if incident.status == "resolved" {
+            continue;
+        }
+        if sample.ts_ms > incident.opened_at_ms.saturating_add(super::timeline::SIDE_MS) {
+            continue;
+        }
+        super::timeline::fill_incident_window(conn, &incident.id, sample.server_id, incident.opened_at_ms)?;
+    }
+    Ok(())
+}
+
 fn attach_alert(
     conn: &Connection,
     sample: &Sample<'_>,
@@ -464,6 +493,14 @@ fn observe_restarts(conn: &Connection, sample: &Sample<'_>) -> Result<(), IntelE
         if let Some((from, to)) = restart_increase(previous, app.restarts) {
             let message = format!("PM2 restart: {} count {from} → {to}", app.name);
             store::add_feed(conn, sample.server_id, sample.ts_ms, "deploy", &message)?;
+            let _ = crate::alerts::AlertHistoryStore::record_marker(
+                conn,
+                sample.server_id,
+                sample.ts_ms,
+                "restart",
+                &app.name,
+                &message,
+            );
             if let Some(open) = store::list_incidents(conn, Some(sample.server_id))?
                 .into_iter()
                 .find(|incident| incident.status != "resolved")
