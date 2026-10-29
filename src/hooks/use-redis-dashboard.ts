@@ -36,8 +36,9 @@ export interface UseRedisDashboardResult extends RedisDashboardData {
   redisDetected: boolean;
 }
 
-export function useRedisDashboard(): UseRedisDashboardResult {
-  const { selectedServerId } = useServersContext();
+export function useRedisDashboard(serverOverride?: string): UseRedisDashboardResult {
+  const { selectedServerId: globalServerId } = useServersContext();
+  const selectedServerId = serverOverride ?? globalServerId;
   const { range, isLive } = useTimeRange();
   const [snapshot, setSnapshot] = useState<RedisSnapshot | null>(null);
   const [series, setSeries] = useState<RedisTimeSeriesPoint[]>([]);

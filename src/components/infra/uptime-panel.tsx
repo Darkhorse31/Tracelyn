@@ -1,3 +1,6 @@
+import { usePrivacy } from "@/contexts/privacy-context"
+import { useLicense } from "@/contexts/license-context"
+import { SyntheticPanel } from "./synthetic-panel"
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { MetricUplot } from "@/components/charts/metric-uplot";
@@ -17,6 +20,9 @@ import { infraApi, type Check, type CheckView } from "./api";
 import { cell, Status } from "./resource-panel";
 
 export function UptimePanel({ serverId }: { serverId: string }) {
+  const { enabled: privateMode } = usePrivacy()
+  const { license } = useLicense()
+  const writable = license?.canWrite === true
   const [views, setViews] = useState<CheckView[] | null>(null);
   const [domains, setDomains] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +61,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
     };
   }, [serverId, revision]);
   const action = async (key: string, task: () => Promise<unknown>) => {
+    if (!writable || privateMode) return
     setBusy(key);
     try {
       await task();
@@ -89,17 +96,19 @@ export function UptimePanel({ serverId }: { serverId: string }) {
       domain.includes(domainQuery.toLowerCase()) &&
       !views?.some((v) => v.check.url === `https://${domain}/`),
   );
+  if (privateMode) return <div className="space-y-4"><SyntheticPanel serverId={serverId} /><p>Uptime target details are hidden in privacy mode</p></div>
   return (
     <Card>
       <CardHeader>
         <CardTitle>DNS and uptime from your PC</CardTitle>
         <CardDescription>
           Verified HTTP(S) GET checks run while Tracelyn is open. DNS resolves
-          locally. Timings separate DNS, TCP, TLS and server wait; redirects are
+          locally. Timings separate DNS, TCP, TLS and server wait. Redirects are
           recorded as their initial response.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        <SyntheticPanel serverId={serverId} />
         {error && (
           <Notice tone="critical" title="Could not load checks">
             {error} Retry after checking local database access.
@@ -145,7 +154,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
             />
             Allow self-signed certificate
           </label>
-          <Button type="submit" disabled={busy !== null}>
+          <Button type="submit" disabled={!writable || busy !== null}>
             {busy === "add" ? "Adding…" : "Add check"}
           </Button>
         </form>
@@ -170,7 +179,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
                     key={domain}
                     size="sm"
                     variant="outline"
-                    disabled={busy !== null}
+                    disabled={!writable || busy !== null}
                     onClick={() =>
                       void action(`add-${domain}`, () =>
                         add(`https://${domain}/`),
@@ -282,7 +291,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
                               size="sm"
                               variant="outline"
                               aria-label={`Run check for ${check.url}`}
-                              disabled={busy !== null}
+                              disabled={!writable || busy !== null}
                               onClick={() =>
                                 void action(check.id, () =>
                                   infraApi.runCheck(serverId, check.id),
@@ -295,7 +304,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
                               size="sm"
                               variant="outline"
                               aria-label={`${check.enabled ? "Pause" : "Resume"} ${check.url}`}
-                              disabled={busy !== null}
+                              disabled={!writable || busy !== null}
                               onClick={() =>
                                 void action(check.id, () =>
                                   infraApi.saveCheck({
@@ -311,7 +320,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
                               size="sm"
                               variant="ghost"
                               aria-label={`Remove ${check.url}`}
-                              disabled={busy !== null}
+                              disabled={!writable || busy !== null}
                               onClick={() =>
                                 void action(check.id, () =>
                                   infraApi.deleteCheck(serverId, check.id),
@@ -334,7 +343,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
                 onSave={(check) =>
                   void action(check.id, () => infraApi.saveCheck(check))
                 }
-                busy={busy !== null}
+                busy={!writable || busy !== null}
               />
             )}
             {picked && latest && (

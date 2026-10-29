@@ -1,3 +1,4 @@
+import { WhatChanged } from "@/components/charts/baseline-insights"
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
@@ -102,7 +103,7 @@ export function ServerPage() {
   const server = servers.find((s) => s.id === selectedServerId);
   const status = selectedServerId ? statusById.get(selectedServerId) : undefined;
   const connected = status?.status === "connected" || status?.status === "degraded";
-  const { isLive, setCursorMs } = useTimeRange();
+  const { range, isLive, setCursorMs } = useTimeRange();
   const { snapshot, waiting } = useServerMetrics(selectedServerId, connected || !isLive);
   const banner = useCollectorBanner(isLive ? snapshot : null);
   const [retrying, setRetrying] = useState(false);
@@ -250,9 +251,11 @@ export function ServerPage() {
         </div>
       ) : snapshot ? (
         <>
+          <WhatChanged serverId={server.id} start={Math.max(range.startMs,range.endMs-86400000)} end={range.endMs} />
           <div className="grid items-stretch gap-4 lg:grid-cols-2">
             <MetricUplot
               title="CPU"
+              baselineServerId={server.id} metricKey="cpu.percent"
               points={series((sample) => sample.cpu, snapshot.cpuHistory)}
               formatValue={formatPercent}
               color="blue"
@@ -261,6 +264,7 @@ export function ServerPage() {
             />
             <MetricUplot
               title="Memory"
+              baselineServerId={server.id} metricKey="memory.percent"
               points={series((sample) => sample.mem, snapshot.memoryHistory)}
               formatValue={formatPercent}
               color="green"
@@ -269,6 +273,7 @@ export function ServerPage() {
             />
             <MetricUplot
               title="Load average (1m)"
+              baselineServerId={server.id} metricKey="load.1"
               label="Load 1m"
               points={series((sample) => sample.load, snapshot.loadHistory)}
               color="orange"
@@ -277,6 +282,7 @@ export function ServerPage() {
             />
             <MetricUplot
               title="Disk usage"
+              baselineServerId={server.id} metricKey="disk.percent"
               label="Used"
               points={series((sample) => sample.disk, snapshot.diskUsageHistory)}
               formatValue={formatPercent}

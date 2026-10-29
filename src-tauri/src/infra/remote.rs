@@ -7,14 +7,14 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, Semaphore};
 
 const LIMIT: usize = 524_288;
-struct Output {
-    text: String,
+pub(crate) struct Output {
+    pub(crate) text: String,
     error: String,
-    code: u32,
+    pub(crate) code: u32,
     truncated: bool,
 }
 
-async fn execute(session: &SshSession, slots: &Semaphore, command: &str) -> Result<Output, String> {
+pub(crate) async fn execute(session: &SshSession, slots: &Semaphore, command: &str) -> Result<Output, String> {
     let _slot = slots.acquire().await.map_err(|_| "Collector stopped")?;
     let future = async {
         let mut channel = session

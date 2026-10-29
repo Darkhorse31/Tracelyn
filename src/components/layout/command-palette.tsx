@@ -32,6 +32,7 @@ import type { TracelynApp } from "@/lib/apps-types";
 import { cn } from "@/lib/utils";
 
 const PAGES = [
+  ["Custom dashboards", "/dashboards"],
   ["Dashboard", "/"],
   ["All servers", "/servers"],
   ["Server metrics", "/server"],

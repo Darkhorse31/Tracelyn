@@ -1,3 +1,4 @@
+import { AnomalyRibbon } from "./baseline-insights"
 import { useMemo } from "react";
 import { UPlotChart } from "@/components/charts/uplot-chart";
 import type { ChartColor } from "@/lib/chart-theme";
@@ -6,6 +7,8 @@ import type { MetricPoint } from "@/lib/types";
 export const UPLOT_SYNC_KEY = "tracelyn-server";
 
 interface MetricUplotProps {
+  baselineServerId?: string
+  metricKey?: string
   title: string;
   /** Legend label; defaults to `title`. */
   label?: string;
@@ -23,6 +26,8 @@ function formatNumber(v: number): string {
 }
 
 export function MetricUplot({
+  baselineServerId,
+  metricKey,
   title,
   label = title,
   points,
@@ -40,7 +45,7 @@ export function MetricUplot({
   );
 
   return (
-    <UPlotChart
+    <div><UPlotChart
       title={title}
       timestamps={timestamps}
       series={series}
@@ -49,7 +54,7 @@ export function MetricUplot({
       syncKey={UPLOT_SYNC_KEY}
       className={className}
       onPointClick={onPointClick}
-    />
+    />{baselineServerId && metricKey && <AnomalyRibbon serverId={baselineServerId} metric={metricKey} points={points} />}</div>
   );
 }
 
