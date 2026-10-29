@@ -10,6 +10,7 @@ pub(crate) mod notify;
 pub(crate) mod policy;
 pub(crate) mod report;
 pub(crate) mod store;
+pub(crate) mod timeline;
 pub(crate) mod types;
 
 use crate::apps::types::{AppKind, AppMetrics, AppStatus, TracelynApp};
@@ -210,6 +211,13 @@ fn app_crashed(app: &TracelynApp) -> bool {
 }
 
 fn app_version(app: &TracelynApp) -> String {
+    for prefix in ["git:", "image:"] {
+        if let Some(tag) = app.tags.iter().find_map(|tag| tag.strip_prefix(prefix)) {
+            if !tag.is_empty() {
+                return format!("{prefix}{tag}");
+            }
+        }
+    }
     match (&app.cwd, &app.interpreter) {
         (Some(cwd), Some(bin)) if !cwd.is_empty() || !bin.is_empty() => format!("{cwd}|{bin}"),
         (Some(cwd), None) if !cwd.is_empty() => cwd.clone(),

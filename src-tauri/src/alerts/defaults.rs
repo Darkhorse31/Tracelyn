@@ -17,6 +17,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 60,
                 metric_key: None,
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
         (
@@ -28,6 +29,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 300,
                 metric_key: Some("cpu.percent".into()),
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
         (
@@ -39,6 +41,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 300,
                 metric_key: Some("memory.percent".into()),
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
         (
@@ -50,6 +53,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 0,
                 metric_key: Some("disk.percent".into()),
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
         (
@@ -61,6 +65,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 120,
                 metric_key: Some("http.5xx_rate_percent".into()),
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
         (
@@ -72,6 +77,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 120,
                 metric_key: Some("endpoint.p95_ms".into()),
                 endpoint_label: Some("All endpoints".into()),
+                ..RuleParams::default()
             },
         ),
         (
@@ -83,6 +89,7 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
                 duration_secs: 120,
                 metric_key: Some("redis.memory_used_percent".into()),
                 endpoint_label: None,
+                ..RuleParams::default()
             },
         ),
     ];
@@ -97,6 +104,8 @@ pub fn seed_default_rules(conn: &Connection, now_ms: i64) -> Result<(), RuleErro
             params,
             created_at_ms: now_ms,
             updated_at_ms: now_ms,
+            firing: false,
+            no_data: false,
         };
         upsert_rule(conn, &rule)?;
     }

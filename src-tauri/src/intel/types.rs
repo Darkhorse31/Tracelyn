@@ -266,6 +266,7 @@ pub const CHANNEL_KINDS: &[&str] = &[
     "telegram",
     "email",
     "webhook",
+    "ntfy",
 ];
 
 pub const WATCH_METRICS: &[&str] = &[

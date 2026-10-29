@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTs, SeverityBadge, statusLabel } from "@/components/intel/format";
+import { useLicense } from "@/contexts/license-context";
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import {
   ackIncident,
@@ -26,11 +28,18 @@ const KIND_LABEL: Record<string, string> = {
   anomaly: "Anomaly",
   audit: "Audit",
   note: "Note",
+  restart: "Restart",
+  error: "Error pattern",
+  ops: "Ops action",
+  cron: "Cron run",
 };
 
 export function IncidentPage() {
   const { incidentId } = useParams();
   const { servers } = useServersContext();
+  const { license } = useLicense();
+  const { mask } = usePrivacy();
+  const canWrite = Boolean(license?.canWrite);
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -83,7 +92,7 @@ export function IncidentPage() {
               <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <SeverityBadge severity={detail.incident.severity} />
                 <span>{statusLabel(detail.incident.status)}</span>
-                <span>{serverName ?? detail.incident.serverId}</span>
+                <span>{mask(serverName ?? detail.incident.serverId)}</span>
                 <span className="font-mono text-xs">Opened {formatTs(detail.incident.openedAtMs)}</span>
               </p>
             </div>
@@ -92,7 +101,7 @@ export function IncidentPage() {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={busy || detail.incident.status !== "open"}
+                disabled={!canWrite || busy || detail.incident.status !== "open"}
                 onClick={() => act(() => ackIncident(detail.incident.id))}
               >
                 Acknowledge
@@ -100,7 +109,7 @@ export function IncidentPage() {
               <Button
                 type="button"
                 size="sm"
-                disabled={busy || detail.incident.status === "resolved"}
+                disabled={!canWrite || busy || detail.incident.status === "resolved"}
                 onClick={() => act(() => resolveIncident(detail.incident.id))}
               >
                 Resolve
@@ -111,7 +120,7 @@ export function IncidentPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={busy || detail.incident.status === "resolved"}
+                  disabled={!canWrite || busy || detail.incident.status === "resolved"}
                   onClick={() => act(() => snoozeIncident(detail.incident.id, minutes))}
                 >
                   {minutes === 15 ? "Snooze 15m" : minutes === 60 ? "Snooze 1h" : "Snooze 1d"}
@@ -145,12 +154,29 @@ export function IncidentPage() {
               >
                 PDF
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    downloadFile(await exportReport({ format: "md", incidentId: detail.incident.id }));
+                  } catch (err) {
+                    toast.error(String(err));
+                  }
+                }}
+              >
+                Markdown
+              </Button>
             </div>
           </div>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Timeline</CardTitle>
-              <CardDescription>Alerts, deploys, anomalies, notes, and audit actions in time order.</CardDescription>
+              <CardDescription>
+                Alert, anomalies, new error patterns, restarts, deploys, and audit actions from 15
+                minutes on either side, in time order.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {detail.timeline.length === 0 ? (
@@ -163,7 +189,7 @@ export function IncidentPage() {
                         <span className="font-medium">{KIND_LABEL[entry.kind] ?? entry.kind}</span>
                         <span className="ml-2 font-mono text-xs text-muted-foreground">{formatTs(entry.tsMs)}</span>
                       </p>
-                      <p className="text-muted-foreground">{entry.message}</p>
+                      <p className="text-muted-foreground">{mask(entry.message)}</p>
                     </li>
                   ))}
                 </ol>
@@ -186,7 +212,7 @@ export function IncidentPage() {
               <Label htmlFor="incident-note">Note</Label>
               <Input id="incident-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} />
             </div>
-            <Button type="submit" disabled={busy || !note.trim()}>
+            <Button type="submit" disabled={!canWrite || busy || !note.trim()}>
               Add note
             </Button>
           </form>

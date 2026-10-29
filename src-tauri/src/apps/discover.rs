@@ -7,6 +7,7 @@ use crate::apps::parsers::pm2::parse_pm2_jlist;
 use crate::apps::parsers::systemd::{filter_to_custom_unit_files, parse_systemctl_list};
 use crate::apps::types::{AppKind, AppOrigin, AppStatus, TracelynApp};
 use crate::ssh::{run_command, SshSession};
+use std::collections::HashMap;
 
 const PM2_HOME_PROBE: &str =
     "ls -d /root/.pm2 /home/*/.pm2 2>/dev/null | head -20";
@@ -131,10 +132,58 @@ pub async fn discover_apps(
         }
     }
 
+    attach_git_heads(session, &mut apps).await;
     apply_manual_overrides(&mut apps, manual);
     collapse_duplicate_services(&mut apps);
     apps.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(apps)
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+async fn attach_git_heads(session: &SshSession, apps: &mut [TracelynApp]) {
+    let mut cwds = Vec::new();
+    for app in apps.iter() {
+        if let Some(cwd) = app.cwd.as_deref().filter(|cwd| !cwd.is_empty()) {
+            if !cwds.iter().any(|known: &String| known == cwd) {
+                cwds.push(cwd.to_string());
+            }
+        }
+    }
+    cwds.truncate(20);
+    if cwds.is_empty() {
+        return;
+    }
+    let script = cwds
+        .iter()
+        .map(|cwd| {
+            let quoted = shell_quote(cwd);
+            format!("printf '%s\\t' {quoted}; git -C {quoted} rev-parse --short HEAD 2>/dev/null || printf '\\n'")
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    let Ok(out) = run_remote(session, &script).await else {
+        return;
+    };
+    let mut heads = HashMap::new();
+    for line in out.lines() {
+        let Some((cwd, rev)) = line.split_once('\t') else {
+            continue;
+        };
+        let rev = rev.trim();
+        if rev.len() >= 7 && rev.chars().all(|c| c.is_ascii_hexdigit()) {
+            heads.insert(cwd.to_string(), rev.to_string());
+        }
+    }
+    for app in apps.iter_mut() {
+        if let Some(cwd) = &app.cwd {
+            if let Some(rev) = heads.get(cwd) {
+                app.tags.push(format!("git:{rev}"));
+            }
+        }
+    }
 }
 
 async fn run_remote(session: &SshSession, cmd: &str) -> Result<String, String> {

@@ -5,7 +5,16 @@ export type RuleKind =
   | "disk_high"
   | "http_5xx_rate"
   | "endpoint_p95"
-  | "redis_memory_near_max";
+  | "redis_memory_near_max"
+  | "log_query"
+  | "trace_p95"
+  | "trace_error_rate";
+
+export interface RuleCondition {
+  metricKey: string;
+  op: string;
+  threshold: number;
+}
 
 export interface RuleParams {
   threshold: number;
@@ -13,6 +22,15 @@ export interface RuleParams {
   durationSecs?: number;
   metricKey?: string;
   endpointLabel?: string;
+  conditions?: RuleCondition[];
+  cooldownSecs?: number;
+  quietStartMin?: number | null;
+  quietEndMin?: number | null;
+  logQuery?: string | null;
+  endpoint?: string | null;
+  windowSecs?: number;
+  alertOnNoData?: boolean;
+  silenceUntilMs?: number | null;
 }
 
 export interface AlertRule {
@@ -24,6 +42,17 @@ export interface AlertRule {
   params: RuleParams;
   createdAtMs: number;
   updatedAtMs: number;
+  firing?: boolean;
+  noData?: boolean;
+}
+
+export interface ChartMarker {
+  id: string;
+  serverId: string;
+  tsMs: number;
+  kind: string;
+  label: string;
+  detail: string;
 }
 
 export interface AlertEventRecord {

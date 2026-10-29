@@ -46,6 +46,7 @@ const PAGES = [
   ["Slow queries", "/slow-queries"],
   ["Redis", "/redis"],
   ["Alerts", "/alerts"],
+  ["Incidents", "/intel?tab=incidents"],
   ["Intelligence", "/intel"],
   ["Audit", "/ops"],
   ["Terminal", "/ops/terminal"],

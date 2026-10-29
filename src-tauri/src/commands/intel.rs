@@ -257,13 +257,17 @@ pub fn intel_get_incident(state: State<AppState>, id: String) -> Result<Incident
         .map_err(err)?
         .ok_or_else(|| "incident not found".to_string())?;
     let mut timeline = store::list_timeline(db.connection(), &id).map_err(err)?;
-    let end = incident.resolved_at_ms.unwrap_or_else(now_ms);
-    timeline.extend(
-        store::list_feed_between(db.connection(), &incident.server_id, incident.opened_at_ms, end).map_err(err)?,
-    );
-    timeline.extend(
-        store::anomalies_as_timeline(db.connection(), &incident.server_id, incident.opened_at_ms, end).map_err(err)?,
-    );
+    let (start, end) = crate::intel::timeline::window(incident.opened_at_ms);
+    for entry in store::list_feed_between(db.connection(), &incident.server_id, start, end).map_err(err)? {
+        let mut entry = entry;
+        if entry.message.starts_with("PM2 restart") {
+            entry.kind = "restart".into();
+        }
+        crate::intel::timeline::push_unique(&mut timeline, entry);
+    }
+    for entry in store::anomalies_as_timeline(db.connection(), &incident.server_id, start, end).map_err(err)? {
+        crate::intel::timeline::push_unique(&mut timeline, entry);
+    }
     timeline.sort_by_key(|entry| (entry.ts_ms, entry.kind.clone()));
     timeline.truncate(500);
     Ok(IncidentDetail { incident, timeline })
@@ -281,6 +285,7 @@ pub fn intel_resolve_incident(state: State<AppState>, id: String) -> Result<(), 
 
 #[tauri::command]
 pub fn intel_snooze_incident(state: State<AppState>, id: String, minutes: u64) -> Result<(), String> {
+    crate::license::require_write()?;
     if !matches!(minutes, 15 | 60 | 1440) {
         return Err("Snooze for 15 minutes, 1 hour, or 1 day".into());
     }
@@ -322,6 +327,7 @@ pub fn intel_set_sound(state: State<AppState>, enabled: bool) -> Result<(), Stri
 }
 
 fn set_status(state: &AppState, id: &str, status: &str, message: &str) -> Result<(), String> {
+    crate::license::require_write()?;
     db_migrate(state)?;
     let now = now_ms();
     let db = state.metrics.lock();
@@ -338,6 +344,7 @@ fn set_status(state: &AppState, id: &str, status: &str, message: &str) -> Result
 
 #[tauri::command]
 pub fn intel_add_incident_note(state: State<AppState>, id: String, text: String) -> Result<(), String> {
+    crate::license::require_write()?;
     db_migrate(&state)?;
     let text = text.trim();
     if text.is_empty() {
@@ -390,8 +397,8 @@ pub fn intel_list_anomalies(
 pub fn intel_export_report(state: State<AppState>, query: ReportQuery) -> Result<FileOut, String> {
     db_migrate(&state)?;
     let format = query.format.as_str();
-    if !matches!(format, "html" | "pdf") {
-        return Err("format must be html or pdf".into());
+    if !matches!(format, "html" | "pdf" | "md") {
+        return Err("format must be html, pdf, or markdown".into());
     }
     let doc = if let Some(id) = query.incident_id.filter(|value| !value.is_empty()) {
         incident_doc(&state, &id)?
@@ -404,6 +411,8 @@ pub fn intel_export_report(state: State<AppState>, query: ReportQuery) -> Result
     };
     let (bytes, mime, ext) = if format == "pdf" {
         (report::render_pdf(&doc), "application/pdf", "pdf")
+    } else if format == "md" {
+        (report::render_markdown(&doc).into_bytes(), "text/markdown", "md")
     } else {
         (report::render_html(&doc).into_bytes(), "text/html", "html")
     };

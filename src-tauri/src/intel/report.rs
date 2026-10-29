@@ -92,6 +92,25 @@ fn sparkline(name: &str, points: &[(i64, f64)]) -> String {
     )
 }
 
+pub fn render_markdown(doc: &ReportDoc) -> String {
+    let mut out = String::new();
+    out.push_str("# ");
+    out.push_str(&doc.title);
+    out.push_str("\n\n");
+    out.push_str(&doc.subtitle);
+    out.push_str("\n\n## Timeline\n\n");
+    if doc.rows.is_empty() {
+        out.push_str("No events in this window.\n");
+    } else {
+        for row in &doc.rows {
+            out.push_str("- ");
+            out.push_str(row);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 pub fn render_pdf(doc: &ReportDoc) -> Vec<u8> {
     let mut lines = Vec::new();
     lines.push(doc.title.clone());
@@ -318,6 +337,10 @@ mod tests {
         assert!(html.contains("CPU incident"));
         assert!(html.contains("<polyline"));
         assert!(html.contains("paging the on-call"));
+        let markdown = render_markdown(&sample());
+        assert!(markdown.starts_with("# CPU incident\n"));
+        assert!(markdown.contains("## Timeline"));
+        assert!(markdown.contains("- 2026-10-26 alert: cpu high"));
         assert!(!html.contains("<script"));
         assert!(!html.contains("https://"));
         let hostile = ReportDoc {

@@ -1,6 +1,11 @@
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { useServersContext } from "@/contexts/servers-context";
+import { useTimeRange } from "@/contexts/time-range-context";
+import { usePrivacy } from "@/contexts/privacy-context";
+import { listChartMarkers } from "@/lib/alerts-api";
+import type { ChartMarker } from "@/lib/alerts-types";
 import {
   type ChartColor,
   getChartTheme,
@@ -9,6 +14,8 @@ import {
   themedSeries,
   useChartTheme,
 } from "@/lib/chart-theme";
+import { markerKindLabel, markerNear, markersInView } from "@/lib/chart-markers";
+import { listenWhileMounted } from "@/lib/events";
 import { cn } from "cn";
 
 export interface ChartSeries {
@@ -116,6 +123,34 @@ export function UPlotChart({
   const plotRef = useRef<uPlot | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const { selectedServerId } = useServersContext();
+  const { range } = useTimeRange();
+  const { mask } = usePrivacy();
+  const [markers, setMarkers] = useState<ChartMarker[]>([]);
+  const [markerTick, setMarkerTick] = useState(0);
+
+  useEffect(() => {
+    if (!selectedServerId) {
+      setMarkers([]);
+      return;
+    }
+    let cancelled = false;
+    listChartMarkers(selectedServerId, range.startMs, range.endMs)
+      .then((rows) => {
+        if (!cancelled) setMarkers(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setMarkers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedServerId, range.startMs, range.endMs, markerTick]);
+
+  useEffect(
+    () => listenWhileMounted("alert-transition", () => setMarkerTick((tick) => tick + 1)),
+    [],
+  );
 
   const formatRef = useRef(formatValue);
   formatRef.current = formatValue;
@@ -133,6 +168,12 @@ export function UPlotChart({
   seriesRef.current = series;
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
+  const visibleMarkers = useMemo(() => {
+    if (timestamps.length < 2) return [];
+    return markersInView(markers, timestamps[0], timestamps[timestamps.length - 1]);
+  }, [markers, timestamps]);
+  const markersRef = useRef(visibleMarkers);
+  markersRef.current = visibleMarkers;
 
   const hasData = timestamps.length >= 2;
   const toggleable = series.length > 1;
@@ -171,6 +212,25 @@ export function UPlotChart({
         ),
         hooks: {
           setCursor: [(u) => setHoverIdx(u.cursor.idx ?? null)],
+          draw: [
+            (u) => {
+              const { left, top, width, height: plotHeight } = u.bbox;
+              const ctx = u.ctx;
+              ctx.save();
+              ctx.strokeStyle = getChartTheme().colors.orange;
+              ctx.lineWidth = 1;
+              ctx.setLineDash([3, 3]);
+              for (const marker of markersRef.current) {
+                const x = u.valToPos(marker.tsMs / 1000, "x", true);
+                if (x < left || x > left + width) continue;
+                ctx.beginPath();
+                ctx.moveTo(x, top);
+                ctx.lineTo(x, top + plotHeight);
+                ctx.stroke();
+              }
+              ctx.restore();
+            },
+          ],
         },
       },
       dataRef.current,
@@ -204,7 +264,7 @@ export function UPlotChart({
 
   useEffect(() => {
     plotRef.current?.redraw(false, true);
-  }, [theme]);
+  }, [theme, visibleMarkers]);
 
   const toggle = (label: string, index: number) => {
     const next = new Set(hidden);
@@ -215,6 +275,8 @@ export function UPlotChart({
   };
 
   const hovering = hoverIdx != null && hoverIdx < timestamps.length;
+  const span = timestamps.length >= 2 ? timestamps[timestamps.length - 1] - timestamps[0] : 0;
+  const near = hovering ? markerNear(visibleMarkers, timestamps[hoverIdx], span) : null;
   const summary = useMemo(
     () => describe(timestamps, series, formatValue),
     [timestamps, series, formatValue],
@@ -275,7 +337,18 @@ export function UPlotChart({
       </ul>
       <p id={`${id}-summary`} className="sr-only">
         {summary}
+        {visibleMarkers.length > 0
+          ? ` Markers: ${visibleMarkers.map((marker) => `${markerKindLabel(marker.kind)} ${mask(marker.label)}`).join(". ")}.`
+          : ""}
       </p>
+      {near && (
+        <p
+          role="tooltip"
+          className="w-fit max-w-full rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground ring-1 ring-foreground/15"
+        >
+          {markerKindLabel(near.kind)} · {mask(near.label)} · {mask(near.detail)}
+        </p>
+      )}
       {hasData ? (
         <div ref={plotElRef} className="w-full" style={{ height }} aria-hidden />
       ) : (

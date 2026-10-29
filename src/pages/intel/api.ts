@@ -104,7 +104,7 @@ export function listAnomalies(
 }
 
 export function exportReport(query: {
-  format: "html" | "pdf";
+  format: "html" | "pdf" | "md";
   incidentId?: string;
   serverId?: string;
   metricKey?: string;
