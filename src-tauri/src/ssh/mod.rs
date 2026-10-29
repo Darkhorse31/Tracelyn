@@ -1,6 +1,7 @@
 mod gate;
 mod host_keys;
 pub mod key_file;
+mod ppk;
 mod session;
 
 pub use host_keys::HostKeyStore;

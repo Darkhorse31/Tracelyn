@@ -410,7 +410,7 @@ async fn connect_handle(
                 }
             };
             let passphrase_ref = passphrase.as_deref();
-            let key_pair = load_secret_key(key_path, passphrase_ref)?;
+            let key_pair = load_client_key(key_path, passphrase_ref)?;
             session
                 .authenticate_publickey(&server.username, Arc::new(key_pair))
                 .await?
@@ -422,6 +422,18 @@ async fn connect_handle(
     }
 
     Ok(session)
+}
+
+fn load_client_key(
+    path: &str,
+    passphrase: Option<&str>,
+) -> Result<russh_keys::key::KeyPair, SshError> {
+    let bytes = std::fs::read(path).map_err(russh_keys::Error::from)?;
+    if crate::ssh::ppk::is_ppk_bytes(&bytes) {
+        return crate::ssh::ppk::load_key_pair(&bytes, passphrase)
+            .map_err(|err| SshError::Message(err.to_string()));
+    }
+    Ok(load_secret_key(path, passphrase)?)
 }
 
 /// Stream access-log lines from `tail -n 500 -F` on a dedicated SSH channel.

@@ -38,4 +38,8 @@ test("masks emails and known server endpoints", () => {
   const endpoint = maskSensitive("deploy@147.93.154.90:22", catalog);
   assert.equal(endpoint, "user@server-1");
   assert.equal(maskSensitive("C:\\keys\\id_ed25519", catalog), "key-file");
+  const ppk = maskSensitive("key C:\\Users\\a\\Documents\\work.ppk end", { servers: [] });
+  assert.equal(ppk.includes("work.ppk"), false);
+  assert.equal(ppk.includes("Documents"), false);
+  assert.match(ppk, /key-file/);
 });

@@ -60,7 +60,7 @@ export function maskSensitive(text: string, catalog: PrivacyCatalog = EMPTY): st
     if (server.keyPath) out = out.split(server.keyPath).join("key-file");
   }
   out = out.replace(
-    /(?:[A-Za-z]:\\(?:[^\\\s]+\\)*\.ssh\\[^\s]+|\/(?:home|root|Users)\/[^/\s]+\/\.ssh\/[^\s]+)/g,
+    /(?:[A-Za-z]:\\(?:[^\\\s]+\\)*\.ssh\\[^\s]+|\/(?:home|root|Users)\/[^/\s]+\/\.ssh\/[^\s]+|[A-Za-z]:\\(?:[^\\\s]+\\)*[^\s\\]+\.ppk|\/[^\s]+\.ppk)/gi,
     "key-file",
   );
   out = out.replace(
