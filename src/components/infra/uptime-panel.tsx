@@ -99,7 +99,7 @@ export function UptimePanel({ serverId }: { serverId: string }) {
           recorded as their initial response.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-5">
+      <CardContent className="flex flex-col gap-4">
         {error && (
           <Notice tone="critical" title="Could not load checks">
             {error} Retry after checking local database access.

@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
 import { toast } from "sonner";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { usePrivacy } from "@/contexts/privacy-context";
@@ -372,19 +373,16 @@ export function TerminalPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Terminal</h2>
-          <p className="text-sm text-muted-foreground">
-            {server.name}. Ctrl+Shift+C copies, Ctrl+Shift+V or right-click pastes. Ctrl+C still
-            interrupts the remote process.
-          </p>
-        </div>
-        <Button type="button" onClick={() => void openTab()} disabled={!enabled || loading || opening || tabs.length >= 8}>
-          New tab
-        </Button>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Terminal"
+        description={`${server.name}. Ctrl+Shift+C copies, Ctrl+Shift+V or right-click pastes. Ctrl+C still interrupts the remote process.`}
+        actions={
+          <Button type="button" onClick={() => void openTab()} disabled={!enabled || loading || opening || tabs.length >= 8}>
+            New tab
+          </Button>
+        }
+      />
       <OpsModeBanner />
       {error && (
         <Notice tone="critical" title="Could not open a shell">

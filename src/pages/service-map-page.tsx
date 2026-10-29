@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Share2 } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,14 +54,11 @@ export function ServiceMapPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Service map</h2>
-          <p className="text-sm text-muted-foreground">
-            {server.name}. Edges come from client, server, producer, and consumer spans.
-          </p>
-        </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Service map"
+        description={`${server.name}. Edges come from client, server, producer, and consumer spans.`}
+        actions={
         <div role="tablist" aria-label="Service map presentation" className="flex gap-2">
           {(["map", "table"] as const).map((name) => (
             <Button
@@ -76,7 +74,8 @@ export function ServiceMapPage() {
             </Button>
           ))}
         </div>
-      </div>
+        }
+      />
       {error && (
         <Notice tone="critical" title="Could not load the service map">
           {error}

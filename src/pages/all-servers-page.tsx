@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, Download, Loader2, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/layout/page-header";
 import { FleetToolbar } from "@/components/servers/fleet-toolbar";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { ServerImportDialog } from "@/components/servers/server-import-dialog";
@@ -262,16 +263,12 @@ export function AllServersPage() {
       </Notice>
     );
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">All servers</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Current health across your fleet. Latest samples are shown here,
-            with last seen for disconnected servers.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="All servers"
+        description="Current health across your fleet. Latest samples are shown here, with last seen for disconnected servers."
+        actions={
+          <>
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload aria-hidden />
             Import
@@ -306,8 +303,9 @@ export function AllServersPage() {
             <Plus aria-hidden />
             Add server
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       {servers.length === 0 ? (
         <EmptyState
           title="Bring your first server into view"
@@ -318,7 +316,7 @@ export function AllServersPage() {
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid items-stretch gap-4 sm:grid-cols-3">
             <Card>
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground">Servers</p>

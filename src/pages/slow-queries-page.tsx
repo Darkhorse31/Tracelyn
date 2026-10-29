@@ -3,6 +3,7 @@ import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Link } from "react-router-dom";
 import { Timer } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,18 +56,16 @@ export function SlowQueriesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Slow queries</h2>
-        <p className="text-sm text-muted-foreground">
-          {server.name}. Statements are grouped after literals are replaced with ?. Tracelyn only reads the log.
-        </p>
-      </div>
+      <PageHeader
+        title="Slow queries"
+        description={`${server.name}. Statements are grouped after literals are replaced with ?. Tracelyn only reads the log.`}
+      />
       {error && (
         <Notice tone="critical" title="Could not load slow queries">
           {error}
         </Notice>
       )}
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Database engine">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Database engine">
         {["", "mysql", "postgres", "mongo"].map((name) => (
           <Button
             key={name || "all"}

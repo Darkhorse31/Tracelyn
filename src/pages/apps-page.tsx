@@ -5,6 +5,7 @@ import { Boxes, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
 import { OpsQuickActions } from "@/components/ops/quick-actions";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
 import { Button } from "@/components/ui/button";
@@ -110,14 +111,11 @@ export function AppsPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Applications</h2>
-          <p className="text-sm text-muted-foreground">
-            {server.name} · discovered every 60 seconds, plus anything you add by hand
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <PageHeader
+        title="Applications"
+        description={`${server.name}. Discovered every 60 seconds, plus anything you add by hand`}
+        actions={
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -145,7 +143,8 @@ export function AppsPage() {
             Add application
           </Button>
         </div>
-      </div>
+        }
+      />
 
       {!connected && (
         <Notice tone="warning" title="Server is not connected">
@@ -158,7 +157,7 @@ export function AppsPage() {
         </Notice>
       )}
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-4">
         <div className="grid gap-1">
           <Label htmlFor="app-search">Search</Label>
           <Input

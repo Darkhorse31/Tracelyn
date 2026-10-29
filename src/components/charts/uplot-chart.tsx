@@ -225,7 +225,7 @@ export function UPlotChart({
       aria-labelledby={`${id}-title`}
       aria-describedby={`${id}-summary`}
       className={cn(
-        "flex flex-col gap-2 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10",
+        "flex h-full flex-col gap-2 rounded-xl bg-card p-4 text-card-foreground ring-1 ring-foreground/10",
         className,
       )}
     >

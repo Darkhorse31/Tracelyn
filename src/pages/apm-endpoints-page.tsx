@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { formatMs, LatencyBandChart } from "@/components/apm/latency-band-chart";
 import { LatencyHeatmap } from "@/components/apm/latency-heatmap";
 import { HowToFix } from "@/components/setup/how-to-fix";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { StatusStackBar } from "@/components/web/status-stack-bar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -236,7 +237,7 @@ function EndpointTable({
 }
 
 export function ApmEndpointsPage() {
-  const { selectedServerId, statusById } = useServersContext();
+  const { servers, selectedServerId, statusById } = useServersContext();
   const { isLive } = useTimeRange();
   const connection = selectedServerId ? statusById.get(selectedServerId)?.status : undefined;
   const connected = connection === "connected" || connection === "degraded";
@@ -278,6 +279,10 @@ export function ApmEndpointsPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <PageHeader
+        title="API endpoints"
+        description={`${servers.find((item) => item.id === selectedServerId)?.name ?? "This server"}. Latency, throughput, and errors per route.`}
+      />
       {!isLive && (
         <Notice tone="info">
           Endpoint metrics are computed from the live log stream. Switch the time

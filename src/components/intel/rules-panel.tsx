@@ -247,12 +247,12 @@ function RuleDialog({
               {formError}
             </Notice>
           )}
-          <div className="grid gap-1.5">
+          <div className="grid gap-2">
             <Label htmlFor={`${formId}-name`}>Name</Label>
             <Input id={`${formId}-name`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-kind`}>Kind</Label>
               <SimpleSelect
                 id={`${formId}-kind`}
@@ -264,7 +264,7 @@ function RuleDialog({
                 options={KINDS.map((kind) => ({ value: kind, label: KIND_LABELS[kind] }))}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-severity`}>Severity</Label>
               <SimpleSelect
                 id={`${formId}-severity`}
@@ -278,7 +278,7 @@ function RuleDialog({
               />
             </div>
           </div>
-          <div className="grid gap-1.5">
+          <div className="grid gap-2">
             <Label htmlFor={`${formId}-server`}>Server</Label>
             <SimpleSelect
               id={`${formId}-server`}
@@ -291,7 +291,7 @@ function RuleDialog({
             />
           </div>
           {needsMetric && (
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-metric`}>Metric key</Label>
               <Input
                 id={`${formId}-metric`}
@@ -308,7 +308,7 @@ function RuleDialog({
             </div>
           )}
           {draft.kind === "restart_loop" && (
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-loop-window`}>Window (seconds)</Label>
               <Input
                 id={`${formId}-loop-window`}
@@ -322,7 +322,7 @@ function RuleDialog({
           )}
           {draft.kind === "log_pattern" && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-pattern`}>Pattern</Label>
                 <Input
                   id={`${formId}-pattern`}
@@ -332,7 +332,7 @@ function RuleDialog({
                   placeholder="ERROR|panic"
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-window`}>Window (seconds)</Label>
                 <Input
                   id={`${formId}-window`}
@@ -347,7 +347,7 @@ function RuleDialog({
           )}
           {(draft.kind === "ssl_expiry" || draft.kind === "uptime") && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-host`}>Host</Label>
                 <SecretInput
                   id={`${formId}-host`}
@@ -357,7 +357,7 @@ function RuleDialog({
                   autoComplete="off"
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-port`}>Port</Label>
                 <SecretInput
                   id={`${formId}-port`}
@@ -373,7 +373,7 @@ function RuleDialog({
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-threshold`}>{low ? "Fire at or below" : "Fire at or above"}</Label>
               <Input
                 id={`${formId}-threshold`}
@@ -386,7 +386,7 @@ function RuleDialog({
                 }
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-clear`}>{low ? "Clear above" : "Clear below"}</Label>
               <Input
                 id={`${formId}-clear`}
@@ -405,7 +405,7 @@ function RuleDialog({
                 }
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-for`}>Sustained for (seconds)</Label>
               <Input
                 id={`${formId}-for`}
@@ -416,7 +416,7 @@ function RuleDialog({
                 onChange={(e) => setDraft({ ...draft, params: { ...draft.params, durationSecs: Number(e.target.value) } })}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-cooldown`}>Cooldown (seconds)</Label>
               <Input
                 id={`${formId}-cooldown`}
@@ -427,7 +427,7 @@ function RuleDialog({
                 onChange={(e) => setDraft({ ...draft, params: { ...draft.params, cooldownSecs: Number(e.target.value) } })}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-quiet-start`}>Quiet from (minutes after midnight)</Label>
               <Input
                 id={`${formId}-quiet-start`}
@@ -444,7 +444,7 @@ function RuleDialog({
                 }
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-quiet-end`}>Quiet until (minutes after midnight)</Label>
               <Input
                 id={`${formId}-quiet-end`}
@@ -461,7 +461,7 @@ function RuleDialog({
                 }
               />
             </div>
-            <div className="grid gap-1.5 sm:col-span-2">
+            <div className="grid gap-2 sm:col-span-2">
               <Label htmlFor={`${formId}-app`}>App id (blank means every app)</Label>
               <Input
                 id={`${formId}-app`}
@@ -470,7 +470,7 @@ function RuleDialog({
                 onChange={(e) => setDraft({ ...draft, params: { ...draft.params, appId: e.target.value } })}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-clear-for`}>Stay clear for (seconds)</Label>
               <Input
                 id={`${formId}-clear-for`}

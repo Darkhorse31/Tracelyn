@@ -65,7 +65,7 @@ export function IncidentPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       <Link to="/intel?tab=incidents" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
         Back to incidents
       </Link>
@@ -77,17 +77,17 @@ export function IncidentPage() {
       {!detail && !error && <Skeleton className="h-40 w-full" />}
       {detail && (
         <>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">{detail.incident.title}</h2>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold tracking-tight">{detail.incident.title}</h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <SeverityBadge severity={detail.incident.severity} />
                 <span>{statusLabel(detail.incident.status)}</span>
                 <span>{serverName ?? detail.incident.serverId}</span>
                 <span className="font-mono text-xs">Opened {formatTs(detail.incident.openedAtMs)}</span>
-              </p>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
@@ -156,7 +156,7 @@ export function IncidentPage() {
               {detail.timeline.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No events on this incident yet.</p>
               ) : (
-                <ol className="flex flex-col gap-3 border-l border-border pl-4">
+                <ol className="flex flex-col gap-4 border-l border-border pl-4">
                   {detail.timeline.map((entry) => (
                     <li key={`${entry.kind}-${entry.id}`} className="text-sm">
                       <p>
@@ -182,7 +182,7 @@ export function IncidentPage() {
               });
             }}
           >
-            <div className="grid flex-1 gap-1.5">
+            <div className="grid flex-1 gap-2">
               <Label htmlFor="incident-note">Note</Label>
               <Input id="incident-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={4000} />
             </div>

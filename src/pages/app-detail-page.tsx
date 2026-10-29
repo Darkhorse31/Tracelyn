@@ -9,6 +9,7 @@ import { OtelSetup } from "@/components/insight/otel-setup";
 import { LogExplorer } from "@/components/logs/log-explorer";
 import { TraceBrowser } from "@/components/traces/trace-browser";
 import { HowToFix } from "@/components/setup/how-to-fix";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,18 +64,14 @@ export function AppDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Button variant="ghost" size="sm" render={<Link to="/apps" />}>
-          Applications
-        </Button>
-        <h2 className="mt-2 text-lg font-semibold tracking-tight">{app.name}</h2>
-        <p className="text-sm text-muted-foreground">
-          {app.kind} · {app.status}
-          {app.cwd ? ` · ${app.cwd}` : ""}
-          {app.interpreter ? ` · ${app.interpreter}` : ""}
-        </p>
-        {opsKind(app.kind) && (
-          <div className="mt-3">
+      <Button variant="ghost" render={<Link to="/apps" />}>
+        Applications
+      </Button>
+      <PageHeader
+        title={app.name}
+        description={`${app.kind} · ${app.status}${app.cwd ? ` · ${app.cwd}` : ""}${app.interpreter ? ` · ${app.interpreter}` : ""}`}
+        actions={
+          opsKind(app.kind) ? (
             <OpsQuickActions
               serverId={app.serverId}
               kind={opsKind(app.kind)!}
@@ -82,11 +79,11 @@ export function AppDetailPage() {
               appId={app.id}
               logPaths={app.logSources.flatMap((source) => (source.path ? [source.path] : []))}
             />
-          </div>
-        )}
-      </div>
+          ) : null
+        }
+      />
 
-      <div role="tablist" aria-label="Application sections" className="flex gap-2">
+      <div role="tablist" aria-label="Application sections" className="flex flex-wrap items-center gap-2">
         {TABS.map((name) => (
           <button
             key={name}
@@ -97,7 +94,7 @@ export function AppDetailPage() {
             aria-controls={`panel-${name}`}
             onClick={() => setTab(name)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm",
+              "inline-flex h-(--control-height) items-center rounded-lg px-3 text-sm",
               tab === name ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/60",
             )}
           >
@@ -108,7 +105,7 @@ export function AppDetailPage() {
 
       {tab === "Overview" && (
         <div role="tabpanel" id="panel-Overview" aria-labelledby="tab-Overview" className="flex flex-col gap-6">
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid items-stretch gap-4 lg:grid-cols-3">
             <MetricUplot title="CPU" points={series?.cpu ?? []} formatValue={(v) => `${v.toFixed(1)}%`} color="blue" height={160} />
             <MetricUplot title="Memory" points={series?.mem ?? []} formatValue={(v) => `${(v / 1024 / 1024).toFixed(0)} MB`} color="orange" height={160} />
             <MetricUplot title="Restarts" points={series?.restarts ?? []} formatValue={(v) => v.toFixed(0)} color="vermillion" height={160} />

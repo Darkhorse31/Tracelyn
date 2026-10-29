@@ -4,6 +4,7 @@ import { Globe } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytesPerSec } from "@/components/charts/metric-uplot";
 import { HowToFix } from "@/components/setup/how-to-fix";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { MetricCard } from "@/components/web/metric-card";
 import { SparklineChart } from "@/components/web/sparkline-chart";
@@ -114,6 +115,10 @@ export function WebTrafficPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Web traffic"
+        description={`${server.name}. Request rate, status codes, and the access log for this host.`}
+      />
       {!isLive && (
         <Notice tone="info">
           Showing stored request-rate history. Status codes, top lists and the access log
@@ -160,7 +165,7 @@ export function WebTrafficPage() {
         </Notice>
       )}
 
-      <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           title="Requests / sec"
           value={metrics.reqPerSec.toFixed(1)}
@@ -192,7 +197,7 @@ export function WebTrafficPage() {
 
       {isLive && (
         <>
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid items-stretch gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Status codes</CardTitle>
@@ -209,7 +214,7 @@ export function WebTrafficPage() {
               <CardHeader>
                 <CardTitle className="text-sm">Top URLs &amp; IPs</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-6 sm:grid-cols-2">
+              <CardContent className="grid items-stretch gap-4 sm:grid-cols-2">
                 <TopList
                   title="URLs"
                   rows={metrics.topUrls.map((u) => ({ key: u.path, count: u.count }))}

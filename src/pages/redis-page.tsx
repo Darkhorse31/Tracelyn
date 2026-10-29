@@ -6,6 +6,7 @@ import { RedisKeyspaceTable } from "@/components/redis/redis-keyspace-table";
 import { RedisSlowlogTable } from "@/components/redis/redis-slowlog-table";
 import { RedisStatCards } from "@/components/redis/redis-stat-cards";
 import { HowToFix } from "@/components/setup/how-to-fix";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -235,13 +236,10 @@ export function RedisPage() {
   }
 
   const header = (
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="min-w-0">
-        <h2 className="truncate text-lg font-semibold tracking-tight">{server.name}</h2>
-        <p className="text-sm text-muted-foreground">
-          {snapshot.info.redisVersion ? `Redis ${snapshot.info.redisVersion}` : "Redis"}
-        </p>
-      </div>
+    <PageHeader
+      title={server.name}
+      description={snapshot.info.redisVersion ? `Redis ${snapshot.info.redisVersion}` : "Redis"}
+      actions={
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">
           <KeyRound aria-hidden />
@@ -281,7 +279,8 @@ export function RedisPage() {
           </Button>
         )}
       </div>
-    </div>
+      }
+    />
   );
 
   return (
@@ -336,12 +335,12 @@ export function RedisPage() {
 
       {isLive && phase && phase !== "live" && phase !== "loading" ? null : loading && !snapshot.collectedAtMs && isLive ? (
         <>
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 8 }, (_, i) => (
               <Skeleton key={i} className="h-[104px] rounded-xl" />
             ))}
           </div>
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid items-stretch gap-4 lg:grid-cols-2">
             <Skeleton className="h-[256px] rounded-xl" />
             <Skeleton className="h-[256px] rounded-xl" />
           </div>
@@ -351,7 +350,7 @@ export function RedisPage() {
           {isLive && <RedisStatCards derived={snapshot.derived} />}
           <RedisCharts series={series} />
           {isLive && (
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid items-stretch gap-4 xl:grid-cols-2">
               <RedisKeyspaceTable keyspace={snapshot.keyspace} />
               <RedisSlowlogTable entries={snapshot.slowlog} />
             </div>

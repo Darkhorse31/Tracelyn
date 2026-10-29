@@ -12,6 +12,7 @@ import {
 } from "@/components/charts/metric-uplot";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { AroundSheet } from "@/components/correlation/around-sheet";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -155,14 +156,15 @@ export function ServerPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <h2 className="truncate text-xl font-semibold tracking-tight">{server.name}</h2>
-          <p className="truncate font-mono text-sm text-muted-foreground">
+      <PageHeader
+        title={server.name}
+        description={
+          <span className="truncate font-mono">
             <Masked text={`${server.username}@${server.host}:${server.port}`} />
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+          </span>
+        }
+        actions={
+          <>
           {snapshot ? (
             <>
               <StatPill label="CPU" value={formatPercent(snapshot.cpuPercent)} />
@@ -175,12 +177,13 @@ export function ServerPage() {
               <Skeleton key={i} className="h-[58px] w-28 rounded-lg" />
             ))
           )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {isLive && connected && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-(--control-height) items-center gap-2">
             <Switch id="live-1s" checked={live1s} onCheckedChange={(value) => setLive1s(Boolean(value))} />
             <Label htmlFor="live-1s">Live 1s</Label>
           </div>
@@ -199,11 +202,11 @@ export function ServerPage() {
           >
             {paused ? "Resume" : "Pause"}
           </Button>
-          <label className="flex min-w-48 flex-1 items-center gap-2 text-xs text-muted-foreground">
-            Scrub
+          <label className="flex h-(--control-height) min-w-48 flex-1 items-center gap-2 text-sm text-muted-foreground">
+            <span className="shrink-0">Scrub</span>
             <input
               type="range"
-              className="w-full accent-primary"
+              className="h-2 w-full accent-primary"
               min={0}
               max={Math.max(samples.length - 1, 0)}
               value={end}
@@ -240,14 +243,14 @@ export function ServerPage() {
       )}
 
       {loading ? (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid items-stretch gap-4 lg:grid-cols-2">
           {Array.from({ length: 8 }, (_, i) => (
             <Skeleton key={i} className="h-[256px] w-full rounded-xl" />
           ))}
         </div>
       ) : snapshot ? (
         <>
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid items-stretch gap-4 lg:grid-cols-2">
             <MetricUplot
               title="CPU"
               points={series((sample) => sample.cpu, snapshot.cpuHistory)}
@@ -324,8 +327,8 @@ export function ServerPage() {
           </div>
 
           {isLive && (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card>
+          <div className="grid items-stretch gap-4 lg:grid-cols-2">
+            <Card className="h-full">
               <CardHeader>
                 <CardTitle className="text-sm">Top processes</CardTitle>
               </CardHeader>
@@ -366,7 +369,7 @@ export function ServerPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="h-full">
               <CardHeader>
                 <CardTitle className="text-sm">Services</CardTitle>
                 {snapshot.ssSummary.tcpEstablished != null && (

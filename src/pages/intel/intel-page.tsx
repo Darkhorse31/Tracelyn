@@ -6,6 +6,7 @@ import { DigestPanel } from "@/components/intel/digest-panel";
 import { IncidentsPanel } from "@/components/intel/incidents-panel";
 import { RulesPanel } from "@/components/intel/rules-panel";
 import { SharingPanel } from "@/components/intel/sharing-panel";
+import { PageHeader } from "@/components/layout/page-header";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -30,14 +31,12 @@ export function IntelPage() {
   const tab: TabId = isTab(requested) ? requested : "incidents";
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Intelligence</h2>
-        <p className="text-sm text-muted-foreground">
-          Rules, delivery channels, anomaly bands, incidents, and a digest you can share with a teammate.
-        </p>
-      </div>
-      <div role="tablist" aria-label="Intelligence sections" className="flex flex-wrap gap-1">
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Intelligence"
+        description="Rules, delivery channels, anomaly bands, incidents, and a digest you can share with a teammate."
+      />
+      <div role="tablist" aria-label="Intelligence sections" className="flex flex-wrap items-center gap-2">
         {TABS.map(([id, label]) => {
           const selected = tab === id;
           return (

@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/layout/page-header";
 import { AccountLicenseCard } from "@/components/account/account-license";
 import { UpdatesCard } from "@/components/account/updates";
 import { useEffect, useState } from "react";
@@ -63,6 +64,10 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      <PageHeader
+        title="Settings"
+        description="Account, updates, appearance, and the servers Tracelyn can reach."
+      />
       <AccountLicenseCard />
       <UpdatesCard />
       <Card>

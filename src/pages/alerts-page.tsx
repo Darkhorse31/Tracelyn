@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AlertTemplates } from "@/components/intel/alert-templates";
+import { PageHeader } from "@/components/layout/page-header";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
 import { AlertQuickActions } from "@/components/ops/quick-actions";
 import { Notice } from "@/components/status/notice";
@@ -187,14 +188,18 @@ export function AlertsPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
+      <PageHeader
+        title="Alerts"
+        description="Rules fire after a threshold holds, then clear below the recovery value."
+      />
       <fieldset disabled={!license?.canWrite}><AlertTemplates /></fieldset>
       {error && (
         <Notice tone="critical" title="Could not load alerts">
           {error}
         </Notice>
       )}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+      <div className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Card className="h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <AlertTriangle className="size-4 text-muted-foreground" aria-hidden />
@@ -273,7 +278,7 @@ export function AlertsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="h-full">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <History className="size-4 text-muted-foreground" aria-hidden />

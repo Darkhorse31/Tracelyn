@@ -254,7 +254,7 @@ export function WelcomePage() {
             }
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-5">
+        <CardContent className="flex flex-col gap-6">
           {(error || serverError) && (
             <Notice tone="critical" title="This step needs attention">
               <Masked text={error ?? serverError ?? ""} />

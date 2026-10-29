@@ -131,11 +131,11 @@ export function DigestPanel() {
               }
             }}
           >
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-name`}>Name</Label>
               <Input id={`${formId}-name`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-channel`}>Channel</Label>
               <SimpleSelect
                 id={`${formId}-channel`}
@@ -145,7 +145,7 @@ export function DigestPanel() {
                 options={channels.map((channel) => ({ value: channel.id, label: channel.name }))}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-cadence`}>Cadence</Label>
               <SimpleSelect
                 id={`${formId}-cadence`}
@@ -157,7 +157,7 @@ export function DigestPanel() {
                 ]}
               />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-hour`}>Hour (UTC)</Label>
               <Input
                 id={`${formId}-hour`}
@@ -169,7 +169,7 @@ export function DigestPanel() {
               />
             </div>
             {draft.cadence === "weekly" && (
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-day`}>Weekday</Label>
                 <SimpleSelect
                   id={`${formId}-day`}

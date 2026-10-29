@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { buttonVariants } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -29,14 +30,11 @@ const STEPS = [
 export function HowItWorksPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">How Tracelyn works</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Tracelyn watches a Linux server over SSH. The checks and the commands you copy never
-          run automatically.
-        </p>
-      </div>
-      <ol className="flex flex-col gap-3">
+      <PageHeader
+        title="How Tracelyn works"
+        description="Tracelyn watches a Linux server over SSH. The checks and the commands you copy never run automatically."
+      />
+      <ol className="flex flex-col gap-4">
         {STEPS.map((step, index) => (
           <li key={step.title}>
             <Card>

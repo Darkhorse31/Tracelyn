@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Cpu } from "lucide-react";
 import { OpsConfirmDialog } from "@/components/ops/confirm-action-dialog";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Masked } from "@/contexts/privacy-context";
@@ -48,15 +49,11 @@ export function ProcessesPage() {
   }
 
   return (
-    <div className="flex h-[calc(100svh-7rem)] min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Processes</h2>
-          <p className="text-sm text-muted-foreground">
-            {server.name}
-            {connected ? "" : " is not connected. The tree appears after you connect."}
-          </p>
-        </div>
+    <div className="flex h-[calc(100svh-7rem)] min-h-0 flex-col gap-4">
+      <PageHeader
+        title="Processes"
+        description={`${server.name}${connected ? "" : " is not connected. The tree appears after you connect."}`}
+        actions={
         <Button
           type="button"
           variant={grouped ? "secondary" : "outline"}
@@ -65,7 +62,8 @@ export function ProcessesPage() {
         >
           Group by service
         </Button>
-      </div>
+        }
+      />
       {!canWrite && (
         <p className="text-sm text-muted-foreground">A read-only license disables process actions.</p>
       )}

@@ -4,6 +4,7 @@ import { logsForTrace } from "@/lib/api";
 import type { LogLine } from "@/lib/log-types";
 import { Waypoints } from "lucide-react";
 import { Waterfall, formatDur } from "@/components/traces/waterfall";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -87,18 +88,16 @@ export function TraceDetailPage() {
   const events = Array.isArray(span.events) ? span.events : [];
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <Button variant="ghost" size="sm" render={<Link to="/traces" />}>
-          Traces
-        </Button>
-        <h2 className="mt-2 font-mono text-lg font-semibold tracking-tight">{detail.traceId}</h2>
-        <p className="text-sm text-muted-foreground">
-          {detail.spans.length} spans
-          {detail.truncated ? " (showing the first 5,000)" : ""}. Arrow keys move through the waterfall.
-        </p>
-      </div>
-      <div role="tablist" aria-label="Trace views" className="flex gap-2">
+    <div className="flex flex-col gap-6">
+      <Button variant="ghost" render={<Link to="/traces" />}>
+        Traces
+      </Button>
+      <PageHeader
+        mono
+        title={detail.traceId}
+        description={`${detail.spans.length} spans${detail.truncated ? " (showing the first 5,000)" : ""}. Arrow keys move through the waterfall.`}
+      />
+      <div role="tablist" aria-label="Trace views" className="flex flex-wrap items-center gap-2">
         <Button type="button" variant={tab === "waterfall" ? "secondary" : "outline"} aria-selected={tab === "waterfall"} onClick={() => setTab("waterfall")}>
           Waterfall
         </Button>
@@ -106,7 +105,7 @@ export function TraceDetailPage() {
           Related logs
         </Button>
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         {tab === "logs" ? (
           <section aria-label="Related logs" className="max-h-[36rem] overflow-auto rounded-lg border border-border">
             {related.length === 0 ? (

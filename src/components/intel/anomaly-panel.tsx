@@ -88,7 +88,7 @@ export function AnomalyPanel() {
       <CardContent className="flex flex-col gap-4">
         {!selectedServerId && <EmptyState title="No server selected" description="Select a server to see seasonal bands." />}
         {selectedServerId && (
-          <div className="grid max-w-sm gap-1.5">
+          <div className="grid max-w-sm gap-2">
             <Label htmlFor="anomaly-metric">Metric</Label>
             <SimpleSelect
               id="anomaly-metric"

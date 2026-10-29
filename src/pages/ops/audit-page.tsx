@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,20 +81,18 @@ export function AuditPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Audit</h2>
-          <p className="text-sm text-muted-foreground">
-            Who ran which command, on which server, and how it exited. Output is stored as a short excerpt.
-          </p>
-        </div>
-        <Button type="button" variant="outline" onClick={() => void exportCsv()}>
-          Export CSV
-        </Button>
-      </div>
+      <PageHeader
+        title="Audit"
+        description="Who ran which command, on which server, and how it exited. Output is stored as a short excerpt."
+        actions={
+          <Button type="button" variant="outline" onClick={() => void exportCsv()}>
+            Export CSV
+          </Button>
+        }
+      />
       <OpsModeBanner />
       <form
-        className="grid gap-3 md:grid-cols-2 xl:grid-cols-5"
+        className="grid items-end gap-4 md:grid-cols-2 xl:grid-cols-5"
         onSubmit={(event) => {
           event.preventDefault();
           void load();

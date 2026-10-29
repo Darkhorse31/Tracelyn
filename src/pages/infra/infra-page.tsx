@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useServersContext } from "@/contexts/servers-context";
+import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/select";
@@ -362,18 +363,11 @@ export function InfraPage({ section }: { section: Section }) {
   );
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Infrastructure / {server.name}
-          </p>
-          <h2 className="text-xl font-semibold tracking-tight">
-            {config.title}
-          </h2>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            {config.description}
-          </p>
-        </div>
+      <PageHeader
+        eyebrow={`Infrastructure / ${server.name}`}
+        title={config.title}
+        description={config.description}
+        actions={
         <Button
           size="sm"
           variant="outline"
@@ -393,7 +387,8 @@ export function InfraPage({ section }: { section: Section }) {
           <RefreshCw aria-hidden className="size-4" />
           {busy ? "Requesting…" : "Refresh collectors"}
         </Button>
-      </div>
+        }
+      />
       {!connected && (
         <Notice tone="warning" title="Server disconnected">
           Remote results below may be stale.{" "}

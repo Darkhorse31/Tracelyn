@@ -61,6 +61,13 @@
  */
 :root {
   color-scheme: light;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --control-height: 32px;
   --radius: 0.5rem;
   --background: oklch(0.985 0.003 255);
   --foreground: oklch(0.21 0.02 255);

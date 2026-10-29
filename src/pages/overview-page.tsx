@@ -15,6 +15,7 @@ import type { ConnectionStatus, ServerRecord } from "@/lib/types";
 import { Notice } from "@/components/status/notice";
 import { Masked } from "@/contexts/privacy-context";
 import { ServerImportDialog } from "@/components/servers/server-import-dialog";
+import { PageHeader } from "@/components/layout/page-header";
 
 function statusRank(status: ConnectionStatus | undefined): number {
   switch (status) {
@@ -150,17 +151,17 @@ export function OverviewPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Unhealthy and high-utilization servers are sorted first. Metrics refresh
-          about every 2 seconds while connected.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-          <Plus data-icon="inline-start" />
-          Add server
-        </Button>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Overview"
+        description="Unhealthy and high-utilization servers are sorted first. Metrics refresh about every 2 seconds while connected."
+        actions={
+          <Button variant="outline" onClick={() => setAddOpen(true)}>
+            <Plus data-icon="inline-start" />
+            Add server
+          </Button>
+        }
+      />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {sorted.map((server) => (
           <ServerCard

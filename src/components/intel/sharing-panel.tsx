@@ -104,15 +104,15 @@ export function SharingPanel() {
               }
             }}
           >
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-name`}>Name</Label>
               <Input id={`${formId}-name`} value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-path`}>Path</Label>
               <Input id={`${formId}-path`} className="font-mono" value={path} onChange={(e) => setPath(e.target.value)} required />
             </div>
-            <div className="grid gap-1.5 md:col-span-2">
+            <div className="grid gap-2 md:col-span-2">
               <Label htmlFor={`${formId}-note`}>Note</Label>
               <Input id={`${formId}-note`} value={note} onChange={(e) => setNote(e.target.value)} />
             </div>

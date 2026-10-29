@@ -220,11 +220,11 @@ function ChannelDialog({
               {formError}
             </Notice>
           )}
-          <div className="grid gap-1.5">
+          <div className="grid gap-2">
             <Label htmlFor={`${formId}-name`}>Name</Label>
             <Input id={`${formId}-name`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} required />
           </div>
-          <div className="grid gap-1.5">
+          <div className="grid gap-2">
             <Label htmlFor={`${formId}-kind`}>Kind</Label>
             <SimpleSelect
               id={`${formId}-kind`}
@@ -234,7 +234,7 @@ function ChannelDialog({
             />
           </div>
           {draft.kind === "telegram" && (
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-chat`}>Chat id</Label>
               <Input
                 id={`${formId}-chat`}
@@ -246,7 +246,7 @@ function ChannelDialog({
           )}
           {draft.kind === "email" && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-1.5 sm:col-span-2">
+              <div className="grid gap-2 sm:col-span-2">
                 <Label htmlFor={`${formId}-host`}>SMTP host</Label>
                 <SecretInput
                   id={`${formId}-host`}
@@ -255,7 +255,7 @@ function ChannelDialog({
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, smtpHost: e.target.value } })}
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-port`}>Port</Label>
                 <SecretInput
                   id={`${formId}-port`}
@@ -266,7 +266,7 @@ function ChannelDialog({
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, smtpPort: Number(e.target.value) } })}
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-tls`}>Security</Label>
                 <SimpleSelect
                   id={`${formId}-tls`}
@@ -279,7 +279,7 @@ function ChannelDialog({
                   ]}
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-from`}>From</Label>
                 <SecretInput
                   id={`${formId}-from`}
@@ -289,7 +289,7 @@ function ChannelDialog({
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, mailFrom: e.target.value } })}
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-2">
                 <Label htmlFor={`${formId}-to`}>To</Label>
                 <SecretInput
                   id={`${formId}-to`}
@@ -299,7 +299,7 @@ function ChannelDialog({
                   onChange={(e) => setDraft({ ...draft, config: { ...draft.config, mailTo: e.target.value } })}
                 />
               </div>
-              <div className="grid gap-1.5 sm:col-span-2">
+              <div className="grid gap-2 sm:col-span-2">
                 <Label htmlFor={`${formId}-user`}>Username</Label>
                 <SecretInput
                   id={`${formId}-user`}
@@ -312,7 +312,7 @@ function ChannelDialog({
             </div>
           )}
           {needsSecret(draft.kind) && (
-            <div className="grid gap-1.5">
+            <div className="grid gap-2">
               <Label htmlFor={`${formId}-secret`}>{secretLabel}</Label>
               <SecretInput
                 id={`${formId}-secret`}

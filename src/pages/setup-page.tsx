@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,16 +75,11 @@ export function SetupPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Setup guide</h2>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Read-only checks for the access Tracelyn needs
-            {server ? ` on ${server.name}` : ""}. Commands are copied for you to run. Tracelyn
-            does not change the server.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <PageHeader
+        title="Setup guide"
+        description={`Read-only checks for the access Tracelyn needs${server ? ` on ${server.name}` : ""}. Commands are copied for you to run. Tracelyn does not change the server.`}
+        actions={
+        <div className="flex flex-wrap items-center gap-2">
           <Link to="/how-it-works" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
             How Tracelyn works
           </Link>
@@ -91,7 +87,8 @@ export function SetupPage() {
             {busy === "all" ? "Checking…" : "Re-check all"}
           </Button>
         </div>
-      </div>
+        }
+      />
 
       {!server ? (
         <Card>
