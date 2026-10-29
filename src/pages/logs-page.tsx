@@ -21,8 +21,8 @@ export function LogsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
+    <div className="flex h-[calc(100svh-7rem)] min-h-0 flex-col gap-2">
+      <div className="shrink-0">
         <h2 className="text-lg font-semibold tracking-tight">Logs</h2>
         <p className="text-sm text-muted-foreground">
           {server.name}
