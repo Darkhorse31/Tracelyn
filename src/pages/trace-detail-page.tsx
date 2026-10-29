@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { logsForTrace } from "@/lib/api";
+import type { LogLine } from "@/lib/log-types";
 import { Waypoints } from "lucide-react";
 import { Waterfall, formatDur } from "@/components/traces/waterfall";
 import { EmptyState, Notice } from "@/components/status/notice";
@@ -22,6 +24,8 @@ export function TraceDetailPage() {
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
+  const [tab, setTab] = useState<"waterfall" | "logs">("waterfall");
+  const [related, setRelated] = useState<LogLine[]>([]);
 
   useEffect(() => {
     if (!selectedServerId || !traceId) return;
@@ -36,6 +40,21 @@ export function TraceDetailPage() {
       })
       .catch((err) => {
         if (!cancelled) setError(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedServerId, traceId]);
+
+  useEffect(() => {
+    if (!selectedServerId || !traceId) return;
+    let cancelled = false;
+    void logsForTrace(selectedServerId, decodeURIComponent(traceId), 86_400_000)
+      .then((rows) => {
+        if (!cancelled) setRelated(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([]);
       });
     return () => {
       cancelled = true;
@@ -79,8 +98,33 @@ export function TraceDetailPage() {
           {detail.truncated ? " (showing the first 5,000)" : ""}. Arrow keys move through the waterfall.
         </p>
       </div>
+      <div role="tablist" aria-label="Trace views" className="flex gap-2">
+        <Button type="button" variant={tab === "waterfall" ? "secondary" : "outline"} aria-selected={tab === "waterfall"} onClick={() => setTab("waterfall")}>
+          Waterfall
+        </Button>
+        <Button type="button" variant={tab === "logs" ? "secondary" : "outline"} aria-selected={tab === "logs"} onClick={() => setTab("logs")}>
+          Related logs
+        </Button>
+      </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Waterfall spans={detail.spans} selected={index} onSelect={setIndex} />
+        {tab === "logs" ? (
+          <section aria-label="Related logs" className="max-h-[36rem] overflow-auto rounded-lg border border-border">
+            {related.length === 0 ? (
+              <p className="p-6 text-sm text-muted-foreground">No buffered lines mention this trace id.</p>
+            ) : (
+              <ul className="flex flex-col">
+                {related.map((line) => (
+                  <li key={line.id} className="border-b border-border px-3 py-2 text-xs">
+                    <span className="font-medium uppercase">{line.level}</span>{" "}
+                    <Masked text={line.message} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : (
+          <Waterfall spans={detail.spans} selected={index} onSelect={setIndex} />
+        )}
         <aside className="rounded-lg border border-border p-4" aria-label="Selected span">
           <h3 className="text-sm font-semibold">{span.operation}</h3>
           <dl className="mt-3 grid grid-cols-[7rem_1fr] gap-y-1 text-sm">

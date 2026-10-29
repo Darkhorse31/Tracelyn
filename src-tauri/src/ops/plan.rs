@@ -127,7 +127,7 @@ pub fn probe_is_up(kind: &str, target: &str, output: &str) -> bool {
         "pm2" => pm2_is_online(output, target),
         "systemd" => output.trim() == "active",
         "docker" => output.trim() == "true",
-        "nginx" | "apache" => output.trim() == "up",
+        "nginx" | "apache" | "process" => output.trim() == "up",
         _ => false,
     }
 }
@@ -256,6 +256,23 @@ pub fn plan_action(input: &PlanInput, require_confirm: bool) -> Result<PlannedAc
                 "if command -v apache2ctl >/dev/null 2>&1; then apache2ctl graceful; elif command -v httpd >/dev/null 2>&1; then httpd -k graceful; else apachectl graceful; fi",
             )
         }
+        "process" => {
+            if verb != "stop" {
+                return Err("A process only supports SIGTERM.".into());
+            }
+            if !target.chars().all(|c| c.is_ascii_digit()) {
+                return Err("PID must be a number.".into());
+            }
+            vec![PlannedStep {
+                command: apply_sudo(
+                    &format!("kill -TERM -- {}", shell_quote(target)),
+                    use_sudo,
+                    input.sudo_password_set,
+                    None,
+                ),
+                skip_if_prev_failed: false,
+            }]
+        }
         _ => return Err("This entry has no guarded action.".into()),
     };
 
@@ -368,6 +385,10 @@ fn health_shell(
             "if pidof apache2 >/dev/null 2>&1 || pidof httpd >/dev/null 2>&1; then echo up; else echo down; fi"
                 .to_string()
         }
+        "process" => format!(
+            "if ps -p {} >/dev/null 2>&1; then echo up; else echo down; fi",
+            shell_quote(target)
+        ),
         _ => return Err("This entry has no guarded action.".into()),
     };
     let sudo = match kind {
@@ -442,6 +463,20 @@ mod tests {
             confirm_name: None,
             health_timeout_secs: None,
         }
+    }
+
+    #[test]
+    fn process_stop_sends_sigterm() {
+        let mut input = base();
+        input.kind = "process".into();
+        input.verb = "stop".into();
+        input.target = "4242".into();
+        input.use_sudo = false;
+        let plan = plan_action(&input, false).unwrap();
+        assert!(plan.display().contains("kill -TERM"));
+        assert!(plan.display().contains("4242"));
+        assert!(plan.dangerous);
+        assert!(plan.health_command.contains("ps -p"));
     }
 
     #[test]

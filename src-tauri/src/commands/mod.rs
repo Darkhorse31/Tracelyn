@@ -257,6 +257,21 @@ pub fn unsubscribe_server_metrics(state: State<AppState>, server_id: String) {
 }
 
 #[tauri::command]
+pub fn set_live_metrics(state: State<AppState>, server_id: String, enabled: bool) {
+    state.set_live_metrics(&server_id, enabled);
+}
+
+#[tauri::command]
+pub fn subscribe_processes(state: State<AppState>, server_id: String) {
+    state.event_hub.subscribe_processes(&server_id);
+}
+
+#[tauri::command]
+pub fn unsubscribe_processes(state: State<AppState>, server_id: String) {
+    state.event_hub.unsubscribe_processes(&server_id);
+}
+
+#[tauri::command]
 pub fn subscribe_web_traffic(state: State<AppState>, server_id: String) {
     state.event_hub.subscribe_web_traffic(&server_id);
 }

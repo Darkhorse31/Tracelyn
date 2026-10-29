@@ -1,24 +1,31 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
 import { InfraSummaryCard } from "@/components/infra/summary-card";
 import { OpsModeBanner } from "@/components/ops/operations-mode-card";
 import { OpsQuickActions } from "@/components/ops/quick-actions";
 import { CircleCheck, CircleDashed, CircleX, Server } from "lucide-react";
-import { Link } from "react-router-dom";
 import {
   formatBytesPerSec,
   formatPercent,
   MetricUplot,
 } from "@/components/charts/metric-uplot";
 import { EmptyState, Notice } from "@/components/status/notice";
+import { AroundSheet } from "@/components/correlation/around-sheet";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Masked } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
 import { useTimeRange } from "@/contexts/time-range-context";
 import { useCollectorBanner } from "@/hooks/use-collector-banner";
+import { useLiveRing, type LiveSample } from "@/hooks/use-live-ring";
 import { useServerMetrics } from "@/hooks/use-server-metrics";
+import { useRememberedState } from "@/hooks/use-remembered-state";
+import { setLiveMetrics } from "@/lib/api";
+import type { MetricPoint } from "@/lib/types";
 import { COLLECTOR_BANNER_TEXT, plainCollectorText } from "@/lib/collector-banner";
 import { cn } from "cn";
 
@@ -94,10 +101,33 @@ export function ServerPage() {
   const server = servers.find((s) => s.id === selectedServerId);
   const status = selectedServerId ? statusById.get(selectedServerId) : undefined;
   const connected = status?.status === "connected" || status?.status === "degraded";
-  const { isLive } = useTimeRange();
+  const { isLive, setCursorMs } = useTimeRange();
   const { snapshot, waiting } = useServerMetrics(selectedServerId, connected || !isLive);
   const banner = useCollectorBanner(isLive ? snapshot : null);
   const [retrying, setRetrying] = useState(false);
+  const [live1s, setLive1s] = useRememberedState("server:live-1s", false);
+  const [paused, setPaused] = useState(false);
+  const [scrub, setScrub] = useState(0);
+  const [around, setAround] = useState<number | null>(null);
+  const samples = useLiveRing(isLive ? snapshot : null, live1s && isLive);
+  const end = paused ? Math.min(scrub, Math.max(samples.length - 1, 0)) : Math.max(samples.length - 1, 0);
+  const view = samples.slice(0, end + 1).slice(-600);
+  const useRing = live1s && isLive && view.length >= 2;
+
+  useEffect(() => {
+    if (!selectedServerId) return;
+    void setLiveMetrics(selectedServerId, Boolean(live1s && connected && isLive));
+    return () => {
+      void setLiveMetrics(selectedServerId, false);
+    };
+  }, [selectedServerId, live1s, connected, isLive]);
+
+  const openAt = (ts: number) => {
+    setCursorMs(ts);
+    setAround(ts);
+  };
+  const series = (pick: (sample: LiveSample) => number, fallback: MetricPoint[]) =>
+    useRing ? view.map((sample) => ({ t: sample.t, v: pick(sample) })) : fallback;
 
   if (!server) {
     return (
@@ -148,6 +178,46 @@ export function ServerPage() {
         </div>
       </div>
 
+      {isLive && connected && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Switch id="live-1s" checked={live1s} onCheckedChange={(value) => setLive1s(Boolean(value))} />
+            <Label htmlFor="live-1s">Live 1s</Label>
+          </div>
+          <Button
+            type="button"
+            variant={paused ? "secondary" : "outline"}
+            aria-pressed={paused}
+            disabled={!live1s}
+            onClick={() => {
+              setPaused((value) => {
+                const next = !value;
+                if (next) setScrub(Math.max(samples.length - 1, 0));
+                return next;
+              });
+            }}
+          >
+            {paused ? "Resume" : "Pause"}
+          </Button>
+          <label className="flex min-w-48 flex-1 items-center gap-2 text-xs text-muted-foreground">
+            Scrub
+            <input
+              type="range"
+              className="w-full accent-primary"
+              min={0}
+              max={Math.max(samples.length - 1, 0)}
+              value={end}
+              disabled={!paused || samples.length < 2}
+              aria-label="Scrub back through the last 10 minutes"
+              onChange={(event) => setScrub(Number(event.target.value))}
+            />
+          </label>
+          <Button variant="outline" render={<Link to="/processes" />}>
+            All processes
+          </Button>
+        </div>
+      )}
+
       {!isLive && (
         <Notice tone="info">
           Showing stored history. Disk I/O, network, processes and services are
@@ -180,66 +250,74 @@ export function ServerPage() {
           <div className="grid gap-6 lg:grid-cols-2">
             <MetricUplot
               title="CPU"
-              points={snapshot.cpuHistory}
+              points={series((sample) => sample.cpu, snapshot.cpuHistory)}
               formatValue={formatPercent}
               color="blue"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Memory"
-              points={snapshot.memoryHistory}
+              points={series((sample) => sample.mem, snapshot.memoryHistory)}
               formatValue={formatPercent}
               color="green"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Load average (1m)"
               label="Load 1m"
-              points={snapshot.loadHistory}
+              points={series((sample) => sample.load, snapshot.loadHistory)}
               color="orange"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Disk usage"
               label="Used"
-              points={snapshot.diskUsageHistory}
+              points={series((sample) => sample.disk, snapshot.diskUsageHistory)}
               formatValue={formatPercent}
               color="purple"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             {isLive && (
               <>
             <MetricUplot
               title="Disk read"
               label="Read"
-              points={snapshot.diskReadHistory}
+              points={series((sample) => sample.diskRead, snapshot.diskReadHistory)}
               formatValue={formatBytesPerSec}
               color="sky"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Disk write"
               label="Write"
-              points={snapshot.diskWriteHistory}
+              points={series((sample) => sample.diskWrite, snapshot.diskWriteHistory)}
               formatValue={formatBytesPerSec}
               color="vermillion"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Network in"
               label="RX"
-              points={snapshot.netInHistory}
+              points={series((sample) => sample.netIn, snapshot.netInHistory)}
               formatValue={formatBytesPerSec}
               color="sky"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
             <MetricUplot
               title="Network out"
               label="TX"
-              points={snapshot.netOutHistory}
+              points={series((sample) => sample.netOut, snapshot.netOutHistory)}
               formatValue={formatBytesPerSec}
               color="vermillion"
               height={CHART_HEIGHT}
+              onPointClick={openAt}
             />
               </>
             )}
@@ -334,6 +412,9 @@ export function ServerPage() {
           title="No metrics received yet"
           description="Samples arrive every few seconds after connecting."
         />
+      )}
+      {selectedServerId && (
+        <AroundSheet serverId={selectedServerId} timestampMs={around} onClose={() => setAround(null)} />
       )}
       {selectedServerId && <InfraSummaryCard serverId={selectedServerId} />}
       {selectedServerId && <DiagnosticsPanel serverId={selectedServerId} />}

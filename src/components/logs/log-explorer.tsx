@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight, Copy, Pencil, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { HowToFix } from "@/components/setup/how-to-fix";
 import { Notice } from "@/components/status/notice";
@@ -13,8 +13,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { usePrivacy } from "@/contexts/privacy-context";
+import { useTimeRange } from "@/contexts/time-range-context";
 import { useApps } from "@/hooks/use-apps";
 import { useLogStream } from "@/hooks/use-log-stream";
+import {
+  listSavedSearches,
+  saveSavedSearch,
+  searchServerLogs,
+  type SavedSearch,
+} from "@/lib/api";
 import { useRememberedState } from "@/hooks/use-remembered-state";
 import type { TracelynApp } from "@/lib/apps-types";
 import { LOG_LEVELS, type LogLevel, type LogLine } from "@/lib/log-types";
@@ -34,6 +41,16 @@ import {
   type RangeId,
   type SavedFilter,
 } from "@/lib/log-view";
+import {
+  countByField,
+  extractTrace,
+  fieldSuggestions,
+  grepNeedle,
+  groupPatterns,
+  lineMatches,
+  parseLogQuery,
+  usesQueryLanguage,
+} from "@/lib/log-query";
 import { cn } from "@/lib/utils";
 
 const LEVEL_BAR: Record<LogLevel, string> = {
@@ -125,9 +142,20 @@ export function LogExplorer({
   const searchRef = useRef<HTMLInputElement>(null);
   const subscribeIds = lockedAppId ? [lockedAppId] : pickedApps;
   const { lines, facets, sourceStatus, paused, togglePause, loading } = useLogStream(serverId, subscribeIds);
+  const { cursorMs } = useTimeRange();
+  const [patterns, setPatterns] = useRememberedState(`${scope}:patterns`, false);
+  const [freshAfter, setFreshAfter] = useState(0);
+  const [lps, setLps] = useState(0);
+  const [remote, setRemote] = useState<LogLine[]>([]);
+  const [serverSearches, setServerSearches] = useState<SavedSearch[]>([]);
+  const [searchName, setSearchName] = useState("");
+  const knownIds = useRef(new Set<string>());
+  const rateStamps = useRef<number[]>([]);
   const regexError = useMemo(() => queryRegexError(text, useRegex), [text, useRegex]);
-  const parsed = useMemo(() => splitQuery(text, useRegex), [text, useRegex]);
-  const filtered = useMemo(
+  const queryLang = !useRegex && usesQueryLanguage(text);
+  const parsedQuery = useMemo(() => parseLogQuery(text), [text]);
+  const parsed = useMemo(() => splitQuery(queryLang ? "" : text, useRegex), [text, useRegex, queryLang]);
+  const baseFiltered = useMemo(
     () =>
       filterLogLines({
         lines,
@@ -137,12 +165,32 @@ export function LogExplorer({
         levels,
         range,
         customStart,
-        text,
+        text: queryLang ? "" : text,
         useRegex,
         exclude,
       }),
-    [lines, requireHttp, lockedAppId, pickedApps, levels, range, customStart, text, useRegex, exclude],
+    [lines, requireHttp, lockedAppId, pickedApps, levels, range, customStart, text, useRegex, exclude, queryLang],
   );
+  const filtered = useMemo(() => {
+    const seen = new Set(baseFiltered.map((line) => line.raw));
+    const merged = remote.length ? baseFiltered.concat(remote.filter((line) => !seen.has(line.raw))) : baseFiltered;
+    if (!queryLang) return merged;
+    return merged.filter((line) =>
+      lineMatches(parsedQuery, line, apps.find((app) => app.id === line.appId)?.name),
+    );
+  }, [baseFiltered, remote, queryLang, parsedQuery, apps]);
+  const counts = useMemo(
+    () =>
+      parsedQuery.countBy
+        ? countByField(filtered, parsedQuery.countBy, (id) => apps.find((app) => app.id === id)?.name)
+        : [],
+    [parsedQuery.countBy, filtered, apps],
+  );
+  const patternRows = useMemo(
+    () => (patterns ? groupPatterns(filtered.map((line) => line.message || line.raw)) : []),
+    [patterns, filtered],
+  );
+  const suggestions = fieldSuggestions(text);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -192,6 +240,88 @@ export function LogExplorer({
     if (levelLock) return;
     setLevels((prev) => (prev.includes(level) ? prev.filter((item) => item !== level) : [...prev, level]));
   };
+
+  useEffect(() => {
+    const now = Date.now();
+    let added = 0;
+    for (const line of lines) {
+      if (!knownIds.current.has(line.id)) {
+        knownIds.current.add(line.id);
+        added += 1;
+      }
+    }
+    if (knownIds.current.size > lines.length + 2000) {
+      knownIds.current = new Set(lines.map((line) => line.id));
+    }
+    if (added > 0 && added < 500) {
+      for (let i = 0; i < added; i += 1) rateStamps.current.push(now);
+    }
+    rateStamps.current = rateStamps.current.filter((stamp) => now - stamp < 1000);
+    setLps(rateStamps.current.length);
+    const newest = lines[lines.length - 1]?.tsMs ?? 0;
+    if (now - newest > 2000) {
+      setFreshAfter(0);
+      return;
+    }
+    setFreshAfter(newest - 1500);
+    const timer = window.setTimeout(() => setFreshAfter(0), 2000);
+    return () => window.clearTimeout(timer);
+  }, [lines]);
+
+  useEffect(() => {
+    if (!serverId || !queryLang) {
+      setRemote([]);
+      return;
+    }
+    const needle = grepNeedle(parsedQuery);
+    if (!needle) {
+      setRemote([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void searchServerLogs(serverId, needle)
+        .then((rows) =>
+          setRemote(
+            rows.map((raw, index) => ({
+              id: `remote-${index}`,
+              tsMs: Date.now(),
+              sourceId: "remote",
+              level: "unknown" as const,
+              message: raw.slice(0, 500),
+              raw,
+            })),
+          ),
+        )
+        .catch(() => setRemote([]));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [serverId, queryLang, parsedQuery]);
+
+  useEffect(() => {
+    if (!serverId) {
+      setServerSearches([]);
+      return;
+    }
+    void listSavedSearches(serverId).then(setServerSearches).catch(() => setServerSearches([]));
+  }, [serverId]);
+
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  useEffect(() => {
+    if (cursorMs == null) return;
+    const rows = filteredRef.current;
+    if (rows.length === 0) return;
+    let best = 0;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    rows.forEach((line, index) => {
+      const delta = Math.abs(line.tsMs - cursorMs);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = index;
+      }
+    });
+    if (bestDelta <= 120_000) virtualizer.scrollToIndex(best, { align: "center" });
+  }, [cursorMs, virtualizer]);
 
   const jumpTo = (value: string) => {
     const ms = Date.parse(value);
@@ -259,7 +389,7 @@ export function LogExplorer({
               ref={searchRef}
               id="log-search"
               value={text}
-              placeholder={useRegex ? "Regular expression" : "Search or -term"}
+              placeholder={useRegex ? "Regular expression" : "Search, field:value, or status>=500"}
               aria-label="Search logs"
               aria-keyshortcuts="/"
               aria-invalid={regexError ? true : undefined}
@@ -289,6 +419,26 @@ export function LogExplorer({
             </InputGroupAddon>
           </InputGroup>
         </div>
+        {suggestions.length > 0 && (
+          <div role="listbox" aria-label="Log fields" className="flex basis-full flex-wrap gap-1">
+            {suggestions.map((field) => (
+              <button
+                key={field}
+                type="button"
+                role="option"
+                className="rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground hover:bg-accent"
+                onClick={() => {
+                  const parts = text.split(/\s+/);
+                  parts[parts.length - 1] = `${parts[parts.length - 1].startsWith("-") ? "-" : ""}${field}:`;
+                  setText(parts.join(" "));
+                  searchRef.current?.focus();
+                }}
+              >
+                {field}:
+              </button>
+            ))}
+          </div>
+        )}
         <Input
           id="log-exclude"
           value={exclude}
@@ -359,6 +509,54 @@ export function LogExplorer({
           <Switch id="log-follow" checked={follow} onCheckedChange={setFollow} />
           <Label htmlFor="log-follow">Follow</Label>
         </div>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground" aria-live="polite">
+          {lps} lines/s
+        </span>
+        <Button
+          type="button"
+          variant={patterns ? "secondary" : "outline"}
+          aria-pressed={patterns}
+          onClick={() => setPatterns((value) => !value)}
+        >
+          Patterns
+        </Button>
+        <Popover>
+          <PopoverTrigger render={<Button type="button" variant="outline">Save search</Button>}>
+            Save search
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 gap-2 p-3">
+            <Input
+              value={searchName}
+              aria-label="Search name"
+              placeholder="Name"
+              onChange={(event) => setSearchName(event.target.value)}
+            />
+            <Button
+              type="button"
+              disabled={!serverId || !text.trim() || !searchName.trim()}
+              onClick={() => {
+                if (!serverId) return;
+                void saveSavedSearch(serverId, searchName.trim(), text.trim()).then(() => {
+                  toast.success(`Saved search "${searchName.trim()}"`);
+                  setSearchName("");
+                  void listSavedSearches(serverId).then(setServerSearches).catch(() => undefined);
+                }).catch((err) => toast.error(String(err)));
+              }}
+            >
+              Save
+            </Button>
+            {serverSearches.map((search) => (
+              <button
+                key={search.name}
+                type="button"
+                className="truncate text-left text-sm text-foreground hover:underline"
+                onClick={() => setText(search.query)}
+              >
+                {search.name}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
         <SavedFilters
           saved={saved}
           onSave={persist}
@@ -459,7 +657,33 @@ export function LogExplorer({
           tabIndex={0}
           className="min-h-[min(35rem,60vh)] w-full min-w-0 flex-1 overflow-auto rounded-lg border border-border bg-background font-mono text-xs text-foreground focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
         >
-          {filtered.length === 0 ? (
+          {parsedQuery.countBy ? (
+            <ul className="flex flex-col font-sans text-sm">
+              {counts.length === 0 ? (
+                <li className="p-6 text-center text-muted-foreground">No lines match this count.</li>
+              ) : (
+                counts.map((row) => (
+                  <li key={row.value} className="flex items-center justify-between border-b border-border px-3 py-2">
+                    <span className="truncate">{row.value}</span>
+                    <span className="font-mono tabular-nums">{row.count}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : patterns ? (
+            <ul className="flex flex-col">
+              {patternRows.length === 0 ? (
+                <li className="p-6 text-center font-sans text-sm text-muted-foreground">No patterns yet.</li>
+              ) : (
+                patternRows.slice(0, 500).map((row) => (
+                  <li key={row.pattern} className="flex items-start justify-between gap-3 border-b border-border px-3 py-2">
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">{row.pattern}</span>
+                    <span className="font-mono tabular-nums">{row.count}</span>
+                  </li>
+                ))
+              )}
+            </ul>
+          ) : filtered.length === 0 ? (
             <p className="flex h-full min-h-40 items-center justify-center p-8 text-center font-sans text-sm text-muted-foreground">
               {problems.length
                 ? "No lines yet. The source status above explains why the stream is empty."
@@ -469,14 +693,16 @@ export function LogExplorer({
             <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
               {virtualizer.getVirtualItems().map((item) => {
                 const line = filtered[item.index];
+                const phrase = parsedQuery.terms.find((term) => term.kind === "phrase" && !term.neg);
                 return (
                   <LogRow
                     key={line.id}
                     line={line}
-                    query={parsed.needle}
+                    query={queryLang ? (phrase && phrase.kind === "phrase" ? phrase.text : "") : parsed.needle}
                     useRegex={useRegex && !regexError}
                     expanded={Boolean(expanded[line.id])}
                     apps={apps}
+                    fresh={line.tsMs >= freshAfter && freshAfter > 0}
                     onToggle={() => setExpanded((prev) => ({ ...prev, [line.id]: !prev[line.id] }))}
                     measureRef={virtualizer.measureElement}
                     index={item.index}
@@ -718,6 +944,7 @@ function LogRow({
   useRegex,
   expanded,
   apps,
+  fresh,
   onToggle,
   measureRef,
   index,
@@ -728,6 +955,7 @@ function LogRow({
   useRegex: boolean;
   expanded: boolean;
   apps: { id: string; name: string }[];
+  fresh: boolean;
   onToggle: () => void;
   measureRef: (el: Element | null) => void;
   index: number;
@@ -746,11 +974,12 @@ function LogRow({
     }
   }
   const body = expanded ? mask(pretty) : highlight(mask(line.message), query, useRegex);
+  const trace = extractTrace(line.raw);
   return (
     <div
       ref={measureRef}
       data-index={index}
-      className="absolute left-0 flex w-full hover:bg-muted/40"
+      className={cn("absolute left-0 flex w-full hover:bg-muted/40", fresh && "bg-primary/10")}
       style={{ transform: `translateY(${start}px)` }}
     >
       <span aria-hidden className={cn("w-1 shrink-0 self-stretch", LEVEL_BAR[line.level] ?? "bg-border")} />
@@ -777,6 +1006,14 @@ function LogRow({
           <span className="w-24 shrink-0 truncate pt-1.5 text-muted-foreground">{line.sourceId}</span>
         )}
         {line.httpStatus ? <span className="w-10 shrink-0 pt-1.5 tabular-nums">{line.httpStatus}</span> : null}
+        {trace.traceId && (
+          <Link
+            to={`/traces/${encodeURIComponent(trace.traceId)}`}
+            className="mt-1 inline-flex h-6 max-w-28 shrink-0 items-center truncate rounded-md border border-border bg-muted px-1.5 font-mono text-[11px] text-foreground hover:bg-accent"
+          >
+            {trace.traceId.slice(0, 8)}
+          </Link>
+        )}
         <span
           className={cn("min-w-0 flex-1 pt-1.5 whitespace-pre-wrap break-all", enabled && "privacy-blur")}
           data-privacy-mask={enabled ? "" : undefined}

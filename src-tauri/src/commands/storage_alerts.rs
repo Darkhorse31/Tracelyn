@@ -34,6 +34,35 @@ pub fn set_retention_config(
     Ok(store.retention().clone())
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetricsAround {
+    pub cpu: QueryResult,
+    pub memory: QueryResult,
+    pub load: QueryResult,
+}
+
+#[tauri::command]
+pub fn metrics_around(
+    state: State<AppState>,
+    server_id: String,
+    timestamp_ms: i64,
+    window_ms: i64,
+) -> Result<MetricsAround, String> {
+    let window = window_ms.clamp(1_000, 3_600_000);
+    let start = timestamp_ms.saturating_sub(window);
+    let end = timestamp_ms.saturating_add(window);
+    let load = |metric_key: &str| {
+        let store = state.metrics.lock();
+        query_metrics(&store, &server_id, metric_key, start, end, true).map_err(map_err)
+    };
+    Ok(MetricsAround {
+        cpu: load("cpu.percent")?,
+        memory: load("memory.percent")?,
+        load: load("load.1")?,
+    })
+}
+
 #[tauri::command]
 pub fn query_metric_series(
     state: State<AppState>,

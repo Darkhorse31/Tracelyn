@@ -34,6 +34,23 @@ pub struct ProcessRow {
     pub command: String,
 }
 
+/// One row for the process explorer. Sparklines are recent CPU samples for this pid.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessTreeRow {
+    pub pid: u32,
+    pub ppid: u32,
+    pub user: String,
+    pub cpu_percent: f64,
+    pub rss_kb: u64,
+    pub threads: u32,
+    pub command: String,
+    pub started_ms: u64,
+    pub cpu_sparkline: Vec<f64>,
+    pub service: Option<String>,
+    pub service_kind: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServiceRow {

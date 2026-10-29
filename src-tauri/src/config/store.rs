@@ -48,6 +48,16 @@ pub struct AppConfig {
     /// Optional Redis endpoint override (port, socket, or docker container).
     #[serde(default)]
     pub redis_targets: HashMap<String, RedisTargetConfig>,
+    /// Named log queries keyed by server id.
+    #[serde(default)]
+    pub saved_searches: HashMap<String, Vec<SavedSearch>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedSearch {
+    pub name: String,
+    pub query: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -154,6 +164,7 @@ impl ConfigStore {
             .ok_or_else(|| ConfigError::NotFound(id.to_string()))?;
         self.config.route_rules.remove(id);
         self.config.redis_targets.remove(id);
+        self.config.saved_searches.remove(id);
         Ok(self.config.servers.remove(pos))
     }
 
@@ -175,6 +186,46 @@ impl ConfigStore {
             self.config.route_rules.remove(server_id);
         } else {
             self.config.route_rules.insert(server_id.to_string(), rules);
+        }
+        Ok(())
+    }
+
+    pub fn saved_searches(&self, server_id: &str) -> Vec<SavedSearch> {
+        self.config
+            .saved_searches
+            .get(server_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn upsert_saved_search(
+        &mut self,
+        server_id: &str,
+        name: &str,
+        query: &str,
+    ) -> Result<(), ConfigError> {
+        self.get_server(server_id)?;
+        let name = name.trim();
+        let query = query.trim();
+        let list = self.config.saved_searches.entry(server_id.to_string()).or_default();
+        if let Some(existing) = list.iter_mut().find(|row| row.name == name) {
+            existing.query = query.to_string();
+        } else {
+            list.push(SavedSearch {
+                name: name.to_string(),
+                query: query.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn delete_saved_search(&mut self, server_id: &str, name: &str) -> Result<(), ConfigError> {
+        self.get_server(server_id)?;
+        if let Some(list) = self.config.saved_searches.get_mut(server_id) {
+            list.retain(|row| row.name != name);
+            if list.is_empty() {
+                self.config.saved_searches.remove(server_id);
+            }
         }
         Ok(())
     }

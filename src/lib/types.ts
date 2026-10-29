@@ -82,6 +82,20 @@ export interface ProcessRow {
   command: string;
 }
 
+export interface ProcessTreeRow {
+  pid: number;
+  ppid: number;
+  user: string;
+  cpuPercent: number;
+  rssKb: number;
+  threads: number;
+  command: string;
+  startedMs: number;
+  cpuSparkline: number[];
+  service?: string | null;
+  serviceKind?: string | null;
+}
+
 export interface ServiceRow {
   name: string;
   active: boolean;

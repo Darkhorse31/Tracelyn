@@ -3,7 +3,7 @@ use crate::config::ConfigStore;
 use crate::connection::ConnectionManager;
 use crate::diagnostics::DiagnosticEntry;
 use crate::events::{EventHub, LogStreamSnapshot};
-use crate::ssh::HostKeyStore;
+use crate::ssh::{HostKeyStore, SshSession};
 use crate::storage::{default_db_path, MetricStore};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -45,6 +45,8 @@ pub struct AppState {
     log_paused: Mutex<HashSet<String>>,
     log_filters: Mutex<HashMap<String, LogFilter>>,
     log_windows: Mutex<HashMap<String, LogStreamSnapshot>>,
+    sessions: Mutex<HashMap<String, Arc<SshSession>>>,
+    live_metrics: Mutex<HashSet<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -98,7 +100,34 @@ impl AppState {
             log_paused: Mutex::new(HashSet::new()),
             log_filters: Mutex::new(HashMap::new()),
             log_windows: Mutex::new(HashMap::new()),
+            sessions: Mutex::new(HashMap::new()),
+            live_metrics: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub fn attach_session(&self, server_id: &str, session: Arc<SshSession>) {
+        self.sessions.lock().insert(server_id.to_string(), session);
+    }
+
+    pub fn detach_session(&self, server_id: &str) {
+        self.sessions.lock().remove(server_id);
+    }
+
+    pub fn session(&self, server_id: &str) -> Option<Arc<SshSession>> {
+        self.sessions.lock().get(server_id).cloned()
+    }
+
+    pub fn set_live_metrics(&self, server_id: &str, enabled: bool) {
+        let mut set = self.live_metrics.lock();
+        if enabled {
+            set.insert(server_id.to_string());
+        } else {
+            set.remove(server_id);
+        }
+    }
+
+    pub fn live_metrics(&self, server_id: &str) -> bool {
+        self.live_metrics.lock().contains(server_id)
     }
 
     pub fn set_log_window(&self, server_id: &str, snapshot: LogStreamSnapshot) {

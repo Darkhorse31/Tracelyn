@@ -15,6 +15,7 @@ import { OverviewPage } from "@/pages/overview-page";
 import { AlertsPage } from "@/pages/alerts-page";
 import { ApmEndpointsPage } from "@/pages/apm-endpoints-page";
 import { RedisPage } from "@/pages/redis-page";
+import { ProcessesPage } from "@/pages/processes-page";
 import { ServerPage } from "@/pages/server-page";
 import { ServiceMapPage } from "@/pages/service-map-page";
 import { AuditPage } from "@/pages/ops/audit-page";
@@ -46,6 +47,7 @@ function App() {
             <Route path="servers" element={<AllServersPage />} />
             <Route path="welcome" element={<WelcomePage />} />
             <Route path="server" element={<ServerPage />} />
+            <Route path="processes" element={<ProcessesPage />} />
             <Route path="apps" element={<AppsPage />} />
             <Route path="apps/:appId" element={<AppDetailPage />} />
             <Route path="logs" element={<LogsPage />} />

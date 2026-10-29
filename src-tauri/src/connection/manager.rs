@@ -3,7 +3,7 @@ use crate::apps::{discover_apps, load_manual_apps};
 use crate::ssh::SshSession;
 use crate::collectors::redis::{CollectError, RedisCollector};
 use crate::collectors::redis::RedisCollectorState;
-use crate::collectors::system::SystemCollectorState;
+use crate::collectors::system::{spawn_proc_stream, SystemCollectorState};
 use crate::config::RedisTargetConfig;
 use crate::connection::redis_probe::{probe_redis_endpoints, RedisEndpoint};
 use crate::diagnostics::build_diagnostics;
@@ -83,6 +83,43 @@ impl ConnectionManager {
     }
 }
 
+struct LiveGuard(Option<tokio::task::JoinHandle<()>>);
+
+impl Default for LiveGuard {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+impl LiveGuard {
+    fn set(&mut self, task: tokio::task::JoinHandle<()>) {
+        self.stop();
+        self.0 = Some(task);
+    }
+
+    fn running(&self) -> bool {
+        self.0.as_ref().is_some_and(|task| !task.is_finished())
+    }
+
+    fn clear_finished(&mut self) {
+        if self.0.as_ref().is_some_and(|task| task.is_finished()) {
+            self.0 = None;
+        }
+    }
+
+    fn stop(&mut self) {
+        if let Some(task) = self.0.take() {
+            task.abort();
+        }
+    }
+}
+
+impl Drop for LiveGuard {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 fn emit_statuses(app: &AppHandle) {
     let state = app.state::<AppState>();
     let statuses = state.all_statuses();
@@ -102,6 +139,7 @@ async fn run_server_loop(
     loop {
         match connect_persistent(&server, host_keys.clone()).await {
             Ok(session) => {
+                let session = Arc::new(session);
                 backoff = BACKOFF_MIN;
                 disconnected_since = None;
 
@@ -128,11 +166,13 @@ async fn run_server_loop(
                     );
                 }
                 emit_statuses(&app);
+                app.state::<AppState>().attach_session(&server_id, session.clone());
 
                 let result = tokio::select! {
                     result = collector_loop(&app, &session, &server_id, &event_hub) => result,
                     _ = crate::infra::remote::run(&app, &session, &server_id) => Err("Infrastructure polling stopped".into()),
                 };
+                app.state::<AppState>().detach_session(&server_id);
                 if let Err(err) = result {
                     let state = app.state::<AppState>();
                     let prev = state.runtime(&server_id);
@@ -245,6 +285,9 @@ async fn collector_loop(
         Some(collector)
     };
 
+    let (frame_tx, mut frame_rx) = tokio::sync::mpsc::channel(4);
+    let mut live_task = LiveGuard::default();
+    let mut last_frame_at: Option<Instant> = None;
     let mut fast = tokio::time::interval(Duration::from_secs(2));
     let mut slow = tokio::time::interval(Duration::from_secs(5));
     let mut services_iv = tokio::time::interval(Duration::from_secs(15));
@@ -348,6 +391,28 @@ async fn collector_loop(
                 }
             }
             _ = fast.tick() => {
+                let want_live = event_hub.server_detail_open(server_id)
+                    && app.state::<AppState>().live_metrics(server_id);
+                live_task.clear_finished();
+                if !want_live {
+                    live_task.stop();
+                } else if !live_task.running() {
+                    match spawn_proc_stream(session, frame_tx.clone()).await {
+                        Ok(task) => live_task.set(task),
+                        Err(err) => {
+                            let msg = if err.contains("too many") {
+                                "Live 1s needs a free SSH channel. Showing the regular poll instead.".into()
+                            } else {
+                                err
+                            };
+                            collector_error = Some(msg);
+                            collector_name = Some("system".into());
+                        }
+                    }
+                }
+                let streaming = live_task.running()
+                    && last_frame_at.is_some_and(|t| t.elapsed() < Duration::from_secs(3));
+                if !streaming {
                 match state.poll_fast(session).await {
                     Ok(()) => {
                         collector_failures = 0;
@@ -359,6 +424,7 @@ async fn collector_loop(
                         collector_error = Some(err);
                         collector_name = Some("system".into());
                     }
+                }
                 }
                 let overview = state.overview(server_id);
                 event_hub.push_overview(overview.clone());
@@ -381,9 +447,44 @@ async fn collector_loop(
                 alert_metrics.insert("endpoint.p95_ms".into(), web.max_endpoint_p95_ms());
                 evaluate_live_alerts(app, server_id, true, alert_metrics);
             }
+            frame = frame_rx.recv() => {
+                if let Some(frame) = frame {
+                    state.ingest_frame(&frame);
+                    last_frame_at = Some(Instant::now());
+                    collector_failures = 0;
+                    if collector_name.as_deref() == Some("system") {
+                        collector_error = None;
+                        collector_name = None;
+                    }
+                    let overview = state.overview(server_id);
+                    event_hub.push_overview(overview.clone());
+                    event_hub.push_server_detail(state.snapshot(
+                        server_id,
+                        collector_error.clone(),
+                        collector_name.clone(),
+                        collector_failures,
+                    ));
+                    let state_app = app.state::<AppState>();
+                    persist_samples(&state_app, samples_from_overview(&overview));
+                    let mut alert_metrics = HashMap::new();
+                    alert_metrics.insert("cpu.percent".into(), overview.cpu_percent);
+                    alert_metrics.insert("memory.percent".into(), overview.memory_percent);
+                    alert_metrics.insert("disk.percent".into(), overview.disk_percent);
+                    alert_metrics.insert("server.connected".into(), 1.0);
+                    alert_metrics.insert("http.5xx_rate_percent".into(), web.http_5xx_rate_percent());
+                    alert_metrics.insert("endpoint.p95_ms".into(), web.max_endpoint_p95_ms());
+                    evaluate_live_alerts(app, server_id, true, alert_metrics);
+                }
+            }
             _ = slow.tick() => {
                 let _ = state.poll_processes(session).await;
                 let _ = state.poll_ss(session).await;
+                if event_hub.processes_open(server_id) {
+                    let apps = app.state::<AppState>().apps_for_server(server_id);
+                    if state.poll_process_tree(session, &apps).await.is_ok() {
+                        event_hub.push_processes(server_id, state.process_tree());
+                    }
+                }
                 event_hub.push_server_detail(state.snapshot(
                     server_id,
                     collector_error.clone(),

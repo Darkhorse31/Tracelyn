@@ -17,6 +17,8 @@ interface TimeRangeContextValue {
   setPreset: (preset: TimeRangePreset) => void;
   setCustomRange: (startMs: number, endMs: number) => void;
   isLive: boolean;
+  cursorMs: number | null;
+  setCursorMs: (ms: number | null) => void;
 }
 
 const TimeRangeContext = createContext<TimeRangeContextValue | null>(null);
@@ -25,6 +27,7 @@ export function TimeRangeProvider({ children }: { children: ReactNode }) {
   const [range, setRange] = useState<TimeRangeSelection>(() =>
     resolveTimeRange("live"),
   );
+  const [cursorMs, setCursorMs] = useState<number | null>(null);
 
   const setPreset = useCallback((preset: TimeRangePreset) => {
     setRange(resolveTimeRange(preset, Date.now()));
@@ -40,8 +43,10 @@ export function TimeRangeProvider({ children }: { children: ReactNode }) {
       setPreset,
       setCustomRange,
       isLive: range.preset === "live",
+      cursorMs,
+      setCursorMs,
     }),
-    [range, setPreset, setCustomRange],
+    [range, setPreset, setCustomRange, cursorMs],
   );
 
   return (

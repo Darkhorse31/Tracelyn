@@ -7,6 +7,7 @@ pub use audit::{
 };
 pub use plan::{
     actor_name, excerpt, health_message, health_reached, needs_sudo_stdin, plan_action, probe_is_up,
+    shell_quote,
     step_should_run, PlanInput, PlannedAction,
 };
 pub use remote::{run_shell, OpsRuntime};

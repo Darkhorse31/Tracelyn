@@ -1,7 +1,7 @@
 use crate::apps::TracelynApp;
 use crate::events::payloads::{ApmMetricsEvent, WebTrafficEvent};
 use crate::logs::LogLine;
-use crate::metrics::{OverviewServerMetrics, ServerMetricsSnapshot};
+use crate::metrics::{OverviewServerMetrics, ProcessTreeRow, ServerMetricsSnapshot};
 use parking_lot::Mutex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -45,6 +45,7 @@ pub struct EventHub {
     redis_subscribers: Mutex<HashSet<String>>,
     apps_subscribers: Mutex<HashSet<String>>,
     log_stream_subscribers: Mutex<HashSet<String>>,
+    process_subscribers: Mutex<HashSet<String>>,
     pending_overview: Mutex<HashMap<String, OverviewServerMetrics>>,
     pending_server: Mutex<HashMap<String, ServerMetricsSnapshot>>,
     pending_web: Mutex<HashMap<String, WebTrafficEvent>>,
@@ -52,11 +53,13 @@ pub struct EventHub {
     pending_redis: Mutex<HashMap<String, serde_json::Value>>,
     pending_apps: Mutex<HashMap<String, Vec<TracelynApp>>>,
     pending_logs: Mutex<HashMap<String, LogStreamSnapshot>>,
+    pending_processes: Mutex<HashMap<String, Vec<ProcessTreeRow>>>,
     last_web: Mutex<HashMap<String, WebTrafficEvent>>,
     last_apm: Mutex<HashMap<String, ApmMetricsEvent>>,
     last_redis: Mutex<HashMap<String, serde_json::Value>>,
     last_apps: Mutex<HashMap<String, Vec<TracelynApp>>>,
     last_logs: Mutex<HashMap<String, LogStreamSnapshot>>,
+    last_processes: Mutex<HashMap<String, Vec<ProcessTreeRow>>>,
     app: Mutex<Option<AppHandle>>,
 }
 
@@ -70,6 +73,7 @@ impl EventHub {
             redis_subscribers: Mutex::new(HashSet::new()),
             apps_subscribers: Mutex::new(HashSet::new()),
             log_stream_subscribers: Mutex::new(HashSet::new()),
+            process_subscribers: Mutex::new(HashSet::new()),
             pending_overview: Mutex::new(HashMap::new()),
             pending_server: Mutex::new(HashMap::new()),
             pending_web: Mutex::new(HashMap::new()),
@@ -77,11 +81,13 @@ impl EventHub {
             pending_redis: Mutex::new(HashMap::new()),
             pending_apps: Mutex::new(HashMap::new()),
             pending_logs: Mutex::new(HashMap::new()),
+            pending_processes: Mutex::new(HashMap::new()),
             last_web: Mutex::new(HashMap::new()),
             last_apm: Mutex::new(HashMap::new()),
             last_redis: Mutex::new(HashMap::new()),
             last_apps: Mutex::new(HashMap::new()),
             last_logs: Mutex::new(HashMap::new()),
+            last_processes: Mutex::new(HashMap::new()),
             app: Mutex::new(None),
         }
     }
@@ -150,6 +156,32 @@ impl EventHub {
 
     pub fn unsubscribe_log_stream(&self, server_id: &str) {
         self.log_stream_subscribers.lock().remove(server_id);
+    }
+
+    pub fn server_detail_open(&self, server_id: &str) -> bool {
+        self.server_detail_subscribers.lock().contains(server_id)
+    }
+
+    pub fn subscribe_processes(&self, server_id: &str) {
+        self.process_subscribers.lock().insert(server_id.to_string());
+        if let Some(rows) = self.last_processes.lock().get(server_id).cloned() {
+            self.pending_processes.lock().insert(server_id.to_string(), rows);
+        }
+    }
+
+    pub fn unsubscribe_processes(&self, server_id: &str) {
+        self.process_subscribers.lock().remove(server_id);
+    }
+
+    pub fn processes_open(&self, server_id: &str) -> bool {
+        self.process_subscribers.lock().contains(server_id)
+    }
+
+    pub fn push_processes(&self, server_id: &str, rows: Vec<ProcessTreeRow>) {
+        self.last_processes.lock().insert(server_id.to_string(), rows.clone());
+        if self.process_subscribers.lock().contains(server_id) {
+            self.pending_processes.lock().insert(server_id.to_string(), rows);
+        }
     }
 
     pub fn replay_web(&self, server_id: &str) {
@@ -343,6 +375,16 @@ impl EventHub {
             for id in apps_subs {
                 if let Some(apps) = pending.remove(&id) {
                     let _ = app.emit(&format!("apps-updated:{}", id), &apps);
+                }
+            }
+        }
+
+        let process_subs = self.process_subscribers.lock().clone();
+        if !process_subs.is_empty() {
+            let mut pending = self.pending_processes.lock();
+            for id in process_subs {
+                if let Some(rows) = pending.remove(&id) {
+                    let _ = app.emit(&format!("processes:{id}"), &rows);
                 }
             }
         }

@@ -1,4 +1,4 @@
-export type OpsKind = "pm2" | "systemd" | "docker" | "nginx" | "apache";
+export type OpsKind = "pm2" | "systemd" | "docker" | "nginx" | "apache" | "process";
 export type OpsVerb = "start" | "stop" | "restart" | "reload";
 
 export interface ActionRequest {
@@ -62,6 +62,7 @@ export interface TermEvent {
 export const OPS_MODE_EVENT = "tracelyn-ops-mode";
 
 export function defaultVerbs(kind: OpsKind): OpsVerb[] {
+  if (kind === "process") return ["stop"];
   if (kind === "nginx" || kind === "apache") return ["reload"];
   if (kind === "docker") return ["start", "stop", "restart"];
   return ["start", "stop", "restart", "reload"];

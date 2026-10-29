@@ -25,6 +25,7 @@ import {
   CircleHelp,
   ListChecks,
   Server,
+  Cpu,
 } from "lucide-react";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
   { to: "/servers", label: "All servers", icon: Server },
   { to: "/server", label: "Server", icon: Activity },
+  { to: "/processes", label: "Processes", icon: Cpu },
   { to: "/apps", label: "Applications", icon: Boxes },
   { to: "/logs", label: "Logs", icon: ScrollText },
   { to: "/web", label: "Web traffic", icon: BarChart3 },

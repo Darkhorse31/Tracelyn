@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { useServersContext } from "@/contexts/servers-context";
 import { Masked, usePrivacy } from "@/contexts/privacy-context";
 import { useTheme } from "@/contexts/theme-context";
-import { listApps } from "@/lib/api";
+import { listApps, listSavedSearches, type SavedSearch } from "@/lib/api";
 import type { TracelynApp } from "@/lib/apps-types";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +35,7 @@ const PAGES = [
   ["Dashboard", "/"],
   ["All servers", "/servers"],
   ["Server metrics", "/server"],
+  ["Processes", "/processes"],
   ["Applications", "/apps"],
   ["Logs", "/logs"],
   ["Web traffic", "/web"],
@@ -91,6 +92,7 @@ export function CommandPalette() {
   const [apps, setApps] = useState<TracelynApp[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsError, setAppsError] = useState(false);
+  const [searches, setSearches] = useState<SavedSearch[]>([]);
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const selected = servers.find((s) => s.id === selectedServerId);
@@ -154,6 +156,24 @@ export function CommandPalette() {
     };
   }, [open, servers]);
 
+  useEffect(() => {
+    if (!open || !selectedServerId) {
+      setSearches([]);
+      return;
+    }
+    let cancelled = false;
+    void listSavedSearches(selectedServerId)
+      .then((rows) => {
+        if (!cancelled) setSearches(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSearches([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedServerId]);
+
   const commands: CommandItem[] = useMemo(
     () => [
       ...servers.map((server) => ({
@@ -176,6 +196,14 @@ export function CommandPalette() {
           setSelectedServerId(app.serverId);
           navigate(`/apps/${encodeURIComponent(app.id)}`);
         },
+      })),
+      ...searches.map((search) => ({
+        id: `search:${search.name}`,
+        label: search.name,
+        detail: "Saved search",
+        keywords: search.query,
+        icon: Search,
+        run: () => navigate(`/logs?q=${encodeURIComponent(search.query)}`),
       })),
       ...PAGES.map(([label, path]) => ({
         id: `page:${path}`,
@@ -239,6 +267,7 @@ export function CommandPalette() {
     [
       servers,
       apps,
+      searches,
       navigate,
       setSelectedServerId,
       resolvedTheme,

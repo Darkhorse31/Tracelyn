@@ -9,7 +9,7 @@ import type {
   TraceQuery,
   TraceSummary,
 } from "@/lib/insight-types";
-import type { LogStreamSnapshot } from "@/lib/log-types";
+import type { LogLine, LogStreamSnapshot } from "@/lib/log-types";
 import type { RouteRule } from "@/lib/apm-types";
 import type { ApmData, EndpointRow } from "@/lib/apm-types";
 import type { LiveLogLine, WebTrafficMetrics } from "@/lib/web-traffic-types";
@@ -69,6 +69,18 @@ export async function subscribeOverviewMetrics(): Promise<void> {
 
 export async function unsubscribeOverviewMetrics(): Promise<void> {
   return invoke("unsubscribe_overview_metrics");
+}
+
+export async function setLiveMetrics(serverId: string, enabled: boolean): Promise<void> {
+  return invoke("set_live_metrics", { serverId, enabled });
+}
+
+export async function subscribeProcesses(serverId: string): Promise<void> {
+  return invoke("subscribe_processes", { serverId });
+}
+
+export async function unsubscribeProcesses(serverId: string): Promise<void> {
+  return invoke("unsubscribe_processes", { serverId });
 }
 
 export async function subscribeServerMetrics(serverId: string): Promise<void> {
@@ -309,4 +321,44 @@ export async function listSshPrivateKeys(): Promise<SshKeyList> {
 
 export async function inspectSshPrivateKey(path: string): Promise<KeyInspection> {
   return invoke<KeyInspection>("inspect_ssh_private_key", { path });
+}
+
+export async function logsForTrace(serverId: string, traceId: string, window: number): Promise<LogLine[]> {
+  return invoke<LogLine[]>("logs_for_trace", { serverId, traceId, window });
+}
+
+export async function searchServerLogs(serverId: string, pattern: string): Promise<string[]> {
+  return invoke<string[]>("search_server_logs", { serverId, pattern });
+}
+
+export interface SavedSearch {
+  name: string;
+  query: string;
+}
+
+export async function listSavedSearches(serverId: string): Promise<SavedSearch[]> {
+  return invoke<SavedSearch[]>("list_saved_searches", { serverId });
+}
+
+export async function saveSavedSearch(serverId: string, name: string, query: string): Promise<void> {
+  return invoke("save_saved_search", { serverId, name, query });
+}
+
+export async function deleteSavedSearch(serverId: string, name: string): Promise<void> {
+  return invoke("delete_saved_search", { serverId, name });
+}
+
+export interface MetricSeriesPoint {
+  tsMs: number;
+  value: number;
+}
+
+export interface MetricsAround {
+  cpu: { points: MetricSeriesPoint[] };
+  memory: { points: MetricSeriesPoint[] };
+  load: { points: MetricSeriesPoint[] };
+}
+
+export async function metricsAround(serverId: string, timestampMs: number, windowMs: number): Promise<MetricsAround> {
+  return invoke<MetricsAround>("metrics_around", { serverId, timestampMs, windowMs });
 }

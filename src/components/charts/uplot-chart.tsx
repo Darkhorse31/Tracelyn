@@ -36,6 +36,7 @@ export interface UPlotChartProps {
   height?: number;
   syncKey?: string;
   className?: string;
+  onPointClick?: (timestampMs: number) => void;
   /** Rendered at the end of the title row, e.g. a series picker. */
   action?: ReactNode;
 }
@@ -107,6 +108,7 @@ export function UPlotChart({
   syncKey,
   className,
   action,
+  onPointClick,
 }: UPlotChartProps) {
   const id = useId();
   const theme = useChartTheme();
@@ -117,6 +119,8 @@ export function UPlotChart({
 
   const formatRef = useRef(formatValue);
   formatRef.current = formatValue;
+  const clickRef = useRef(onPointClick);
+  clickRef.current = onPointClick;
 
   const data = useMemo<uPlot.AlignedData>(
     () => [timestamps, ...series.map((s) => s.values)],
@@ -173,6 +177,12 @@ export function UPlotChart({
       el,
     );
     plotRef.current = plot;
+    const onClick = () => {
+      const idx = plot.cursor.idx;
+      const ts = idx == null ? null : plot.data[0]?.[idx];
+      if (ts != null) clickRef.current?.(ts * 1000);
+    };
+    plot.over.addEventListener("click", onClick);
 
     const ro = new ResizeObserver(() => {
       plot.setSize({ width: el.clientWidth, height });
@@ -180,6 +190,7 @@ export function UPlotChart({
     ro.observe(el);
 
     return () => {
+      plot.over.removeEventListener("click", onClick);
       ro.disconnect();
       plot.destroy();
       plotRef.current = null;

@@ -136,7 +136,11 @@ export function OpsConfirmDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{verb[0]?.toUpperCase()}{verb.slice(1)} {selected?.target ?? "target"}?</DialogTitle>
+          <DialogTitle>
+            {selected?.kind === "process"
+              ? `Send SIGTERM to ${selected.target}?`
+              : `${verb[0]?.toUpperCase()}${verb.slice(1)} ${selected?.target ?? "target"}?`}
+          </DialogTitle>
           <DialogDescription>
             This is the exact command that will run over SSH. Stop asks you to type the name.
             Afterwards Tracelyn checks that the service reaches the expected state.

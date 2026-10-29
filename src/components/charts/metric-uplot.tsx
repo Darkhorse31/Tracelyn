@@ -15,6 +15,7 @@ interface MetricUplotProps {
   fill?: boolean;
   className?: string;
   height?: number;
+  onPointClick?: (timestampMs: number) => void;
 }
 
 function formatNumber(v: number): string {
@@ -30,6 +31,7 @@ export function MetricUplot({
   fill = true,
   className,
   height = 180,
+  onPointClick,
 }: MetricUplotProps) {
   const timestamps = useMemo(() => points.map((p) => p.t / 1000), [points]);
   const series = useMemo(
@@ -46,6 +48,7 @@ export function MetricUplot({
       height={height}
       syncKey={UPLOT_SYNC_KEY}
       className={className}
+      onPointClick={onPointClick}
     />
   );
 }

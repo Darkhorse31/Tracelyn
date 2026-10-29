@@ -201,6 +201,11 @@ impl SshSession {
         self.open_channel(false).await
     }
 
+    /// Long-lived exec. Fails without waiting when the channel cap would be exceeded.
+    pub async fn open_follow_channel(&self) -> Result<SshChannel, SshError> {
+        self.open_follow_once().await
+    }
+
     async fn open_channel(&self, wait_for_slot: bool) -> Result<SshChannel, SshError> {
         let permit = if wait_for_slot {
             self.acquire().await?
