@@ -1,3 +1,4 @@
+mod companion_history;
 mod license;
 mod alerts;
 mod crash;
@@ -63,6 +64,7 @@ pub fn run() {
             hub.set_app(handle.clone());
             hub.clone().spawn_flusher();
             metrics_ingest::spawn_storage_maintenance(handle.clone());
+            companion_history::spawn(handle.clone());
             infra::setup(handle.clone()).map_err(std::io::Error::other)?;
             intel::spawn_scheduler(handle.clone());
             install_tray(app).map_err(|err| std::io::Error::other(err))?;
@@ -83,6 +85,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::companion::companion_status,
+            commands::companion::companion_log_paths,
+            commands::companion::companion_preview,
+            commands::companion::companion_run,
+            commands::companion::companion_query,
+            commands::companion::companion_sync_all,
             license::license_status,
             license::license_activate,
             license::license_deactivate,

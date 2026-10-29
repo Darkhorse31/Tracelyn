@@ -1,5 +1,5 @@
-export type OpsKind = "pm2" | "systemd" | "docker" | "nginx" | "apache" | "process";
-export type OpsVerb = "start" | "stop" | "restart" | "reload";
+export type OpsKind = "pm2" | "systemd" | "docker" | "nginx" | "apache" | "process" | "companion";
+export type OpsVerb = "start" | "stop" | "restart" | "reload" | "install" | "update" | "uninstall" | "sync" | "configure";
 
 export interface ActionRequest {
   serverId: string;

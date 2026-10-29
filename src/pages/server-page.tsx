@@ -1,3 +1,4 @@
+import { CompanionCard } from "@/components/companion/companion-card";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
@@ -155,6 +156,7 @@ export function ServerPage() {
   return (
     <div className="flex flex-col gap-6">
       <OpsModeBanner />
+      <CompanionCard serverId={selectedServerId} />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className="truncate text-xl font-semibold tracking-tight">{server.name}</h2>

@@ -36,8 +36,8 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
       const last = (points: MetricPoint[]) => points[points.length - 1]?.v ?? 0;
       void (async () => {
         try {
-          const [cpu, memory, disk, load1] = await Promise.all(
-            ["cpu.percent", "memory.percent", "disk.percent", "load.1"].map(load),
+          const [cpu, memory, disk, load1, diskRead, diskWrite, netIn, netOut] = await Promise.all(
+            ["cpu.percent", "memory.percent", "disk.percent", "load.1", "disk.read_bps", "disk.write_bps", "net.rx_bps", "net.tx_bps"].map(load),
           );
           if (cancelled) return;
           setSnapshot({
@@ -49,18 +49,18 @@ export function useServerMetrics(serverId: string | null, enabled: boolean) {
             load5: 0,
             load15: 0,
             diskPercent: last(disk),
-            diskReadBps: 0,
-            diskWriteBps: 0,
-            netInBps: 0,
-            netOutBps: 0,
+            diskReadBps: last(diskRead),
+            diskWriteBps: last(diskWrite),
+            netInBps: last(netIn),
+            netOutBps: last(netOut),
             cpuHistory: cpu,
             memoryHistory: memory,
             loadHistory: load1,
             diskUsageHistory: disk,
-            diskReadHistory: [],
-            diskWriteHistory: [],
-            netInHistory: [],
-            netOutHistory: [],
+            diskReadHistory: diskRead,
+            diskWriteHistory: diskWrite,
+            netInHistory: netIn,
+            netOutHistory: netOut,
             processes: [],
             services: [],
             ssSummary: {},

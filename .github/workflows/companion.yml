@@ -1,0 +1,41 @@
+name: Companion Linux binaries
+on:
+  workflow_dispatch:
+  push:
+    paths: ['companion/**', 'crates/tracelyn-core/**', 'Cargo.lock', '.github/workflows/companion.yml']
+  pull_request:
+    paths: ['companion/**', 'crates/tracelyn-core/**']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-musl, aarch64-unknown-linux-musl]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.13.0
+      - run: cargo install cargo-zigbuild --locked
+      - run: cargo test -p tracelyn-core -p tracelyn-companion --locked
+      - run: cargo zigbuild --release --locked -p tracelyn-companion --target ${{ matrix.target }}
+      - name: Verify static binary and package
+        shell: bash
+        run: |
+          set -eu
+          binary=target/${{ matrix.target }}/release/tracelyn-companion
+          file "$binary"
+          if readelf -l "$binary" | grep -q INTERP; then exit 1; fi
+          mkdir -p artifacts
+          cp "$binary" artifacts/tracelyn-companion-${{ matrix.target }}
+          cd artifacts
+          sha256sum tracelyn-companion-${{ matrix.target }} > tracelyn-companion-${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracelyn-companion-${{ matrix.target }}
+          path: artifacts/*

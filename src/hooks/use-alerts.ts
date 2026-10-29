@@ -44,6 +44,9 @@ export function useAlerts(serverId?: string) {
       }),
     [refresh],
   );
+  useEffect(() => listenWhileMounted("companion-history-updated", () => {
+    void refresh({ quiet: true });
+  }), [refresh]);
 
   const saveRule = useCallback(
     async (rule: AlertRule) => {

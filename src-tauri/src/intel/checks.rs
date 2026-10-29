@@ -9,6 +9,10 @@ pub fn days_until(not_after_unix: i64, now_unix: i64) -> f64 {
 }
 
 pub fn probe_tcp(host: &str, port: u16) -> Result<f64, String> {
+    if host.starts_with("https://")||host.starts_with("http://") {
+        let client=reqwest::blocking::Client::builder().timeout(Duration::from_secs(8)).redirect(reqwest::redirect::Policy::none()).build().map_err(|_|"Could not create HTTP client")?;
+        return Ok(if client.get(host).send().map(|r|r.status().is_success()).unwrap_or(false){1.}else{0.});
+    }
     super::notify::validate_host(host)?;
     if port == 0 {
         return Err("port is required".into());

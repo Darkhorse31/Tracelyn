@@ -348,7 +348,7 @@ function RuleDialog({
           {(draft.kind === "ssl_expiry" || draft.kind === "uptime") && (
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
-                <Label htmlFor={`${formId}-host`}>Host</Label>
+                <Label htmlFor={`${formId}-host`}>{draft.kind === "uptime" ? "Host or HTTP URL" : "Host"}</Label>
                 <SecretInput
                   id={`${formId}-host`}
                   kind="host"

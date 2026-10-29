@@ -1,3 +1,4 @@
+import { syncCompanionConfig } from "@/lib/companion-sync";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AnomalyEvent,
@@ -18,12 +19,16 @@ export function listIntelRules(): Promise<IntelRule[]> {
   return invoke("intel_list_rules");
 }
 
-export function upsertIntelRule(rule: IntelRule): Promise<IntelRule> {
-  return invoke("intel_upsert_rule", { rule });
+export async function upsertIntelRule(rule: IntelRule): Promise<IntelRule> {
+  const result = await invoke<IntelRule>("intel_upsert_rule", { rule });
+  await syncCompanionConfig();
+  return result;
 }
 
-export function deleteIntelRule(id: string): Promise<void> {
-  return invoke("intel_delete_rule", { id });
+export async function deleteIntelRule(id: string): Promise<void> {
+  const result = await invoke<void>("intel_delete_rule", { id });
+  await syncCompanionConfig();
+  return result;
 }
 
 export function evaluateIntel(serverId: string): Promise<EvalOut> {
@@ -34,12 +39,16 @@ export function listChannels(): Promise<Channel[]> {
   return invoke("intel_list_channels");
 }
 
-export function upsertChannel(input: ChannelWrite): Promise<Channel> {
-  return invoke("intel_upsert_channel", { input });
+export async function upsertChannel(input: ChannelWrite): Promise<Channel> {
+  const result = await invoke<Channel>("intel_upsert_channel", { input });
+  await syncCompanionConfig();
+  return result;
 }
 
-export function deleteChannel(id: string): Promise<void> {
-  return invoke("intel_delete_channel", { id });
+export async function deleteChannel(id: string): Promise<void> {
+  const result = await invoke<void>("intel_delete_channel", { id });
+  await syncCompanionConfig();
+  return result;
 }
 
 export function testChannel(id: string): Promise<string> {

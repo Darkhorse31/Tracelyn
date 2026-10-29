@@ -86,6 +86,7 @@ pub fn run(conn: &Connection, sample: &Sample<'_>) -> Result<CycleOut, IntelErro
     }
     let rules = store::list_rules(&tx)?;
     for rule in rules.iter().filter(|rule| rule.enabled && rule_applies(rule, sample.server_id)) {
+        if crate::companion_history::owns_rule(sample.server_id, rule) { continue; }
         if let Err(err) = eval_rule(&tx, rule, sample, &metrics, &mut out) {
             out.errors.push(format!("{}: {err}", rule.name));
         }

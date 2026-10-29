@@ -135,6 +135,17 @@ pub fn build_jobs(channels: &[Channel], title: &str, body: &str, path: &str) -> 
                 },
                 None => errors.push(format!("{}: save a webhook URL first", channel.name)),
             },
+            "ntfy" => {
+                match get_channel_secret(&channel.id).and_then(|value| url::Url::parse(&value).ok()) {
+                    Some(mut url) if url.scheme() == "https" && url.path().trim_matches('/').len() > 0 => {
+                        let topic = url.path().trim_matches('/').to_string();
+                        url.set_path("/");
+                        let payload = json!({"topic":topic,"title":clip_chars(title,200),"message":clip_chars(body,3500)}).to_string();
+                        jobs.push(Job::Https {url:url.to_string(),body:payload});
+                    }
+                    _ => errors.push(format!("{}: save an HTTPS ntfy topic URL first",channel.name)),
+                }
+            }
             "telegram" => {
                 let token = get_channel_secret(&channel.id);
                 let chat = channel.config.chat_id.trim();

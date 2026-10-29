@@ -1,3 +1,4 @@
+import { CompanionCard } from "@/components/companion/companion-card";
 import { AccountLicenseCard } from "@/components/account/account-license";
 import { UpdatesCard } from "@/components/account/updates";
 import { useEffect, useState } from "react";
@@ -119,6 +120,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
       <OperationsModeCard />
+      <CompanionCard />
       <Card>
         <CardHeader>
           <CardTitle>Diagnostics</CardTitle>

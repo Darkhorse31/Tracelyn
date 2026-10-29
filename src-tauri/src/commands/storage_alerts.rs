@@ -43,8 +43,8 @@ pub struct MetricsAround {
 }
 
 #[tauri::command]
-pub fn metrics_around(
-    state: State<AppState>,
+pub async fn metrics_around(
+    state: State<'_, AppState>,
     server_id: String,
     timestamp_ms: i64,
     window_ms: i64,
@@ -57,18 +57,18 @@ pub fn metrics_around(
         query_metrics(&store, &server_id, metric_key, start, end, true).map_err(map_err)
     };
     Ok(MetricsAround {
-        cpu: load("cpu.percent")?,
-        memory: load("memory.percent")?,
-        load: load("load.1")?,
+        cpu: crate::companion_history::merge(&state, load("cpu.percent")?, start, end).await,
+        memory: crate::companion_history::merge(&state, load("memory.percent")?, start, end).await,
+        load: crate::companion_history::merge(&state, load("load.1")?, start, end).await,
     })
 }
 
 #[tauri::command]
-pub fn query_metric_series(
-    state: State<AppState>,
+pub async fn query_metric_series(
+    state: State<'_, AppState>,
     input: QueryMetricsInput,
 ) -> Result<QueryResult, String> {
-    query_metrics(
+    let local = query_metrics(
         &*state.metrics.lock(),
         &input.server_id,
         &input.metric_key,
@@ -76,7 +76,8 @@ pub fn query_metric_series(
         input.range_end_ms,
         input.prefer_live,
     )
-    .map_err(map_err)
+    .map_err(map_err)?;
+    Ok(crate::companion_history::merge(&state, local, input.range_start_ms, input.range_end_ms).await)
 }
 
 #[tauri::command]

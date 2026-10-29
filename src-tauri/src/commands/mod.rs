@@ -1,3 +1,4 @@
+pub mod companion;
 pub mod apps;
 pub mod fleet;
 pub mod diagnostics;

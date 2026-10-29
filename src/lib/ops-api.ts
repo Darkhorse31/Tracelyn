@@ -24,11 +24,11 @@ export function opsSudoConfigured(serverId: string): Promise<{ configured: boole
 }
 
 export function opsPreview(request: ActionRequest): Promise<ActionPreview> {
-  return invoke("ops_preview", { request });
+  return invoke(request.kind === "companion" ? "companion_preview" : "ops_preview", { request });
 }
 
 export function opsRun(request: ActionRequest): Promise<ActionOutcome> {
-  return invoke("ops_run", { request });
+  return invoke(request.kind === "companion" ? "companion_run" : "ops_run", { request });
 }
 
 export function opsListAudit(filter: AuditFilter): Promise<AuditRow[]> {

@@ -53,6 +53,7 @@ export type ChannelKind =
   | "slack"
   | "discord"
   | "teams"
+  | "ntfy"
   | "telegram"
   | "email"
   | "webhook";
@@ -200,6 +201,7 @@ export const CHANNEL_LABELS: Record<ChannelKind, string> = {
   discord: "Discord",
   teams: "Microsoft Teams",
   telegram: "Telegram",
+  ntfy: "ntfy",
   email: "Email (SMTP)",
   webhook: "Webhook",
 };
