@@ -2,7 +2,9 @@ use crate::apps::types::TracelynApp;
 use crate::infra::InfraState;
 use crate::secrets::{get_secret, SecretKind};
 use crate::setup::{build_checks, probe_script, AskedPath, EngineFact, LocalFacts, SetupCheck};
-use crate::ssh::key_file::{inspect_key_file, list_private_keys, ssh_dir, KeyInspection, SshKeyList};
+use crate::ssh::key_file::{
+    detected_private_keys, inspect_key_file, ssh_dir, KeyInspection, SshKeyList,
+};
 use crate::ssh::{connect_persistent, run_command};
 use crate::state::AppState;
 use std::path::Path;
@@ -142,11 +144,11 @@ pub fn list_ssh_private_keys() -> SshKeyList {
     let dir = ssh_dir();
     SshKeyList {
         directory: dir.display().to_string(),
-        keys: list_private_keys(&dir),
+        keys: detected_private_keys(),
     }
 }
 
 #[tauri::command]
-pub fn inspect_ssh_private_key(path: String) -> KeyInspection {
-    inspect_key_file(Path::new(&path))
+pub fn inspect_ssh_private_key(path: String, passphrase: Option<String>) -> KeyInspection {
+    inspect_key_file(Path::new(&path), passphrase.as_deref())
 }

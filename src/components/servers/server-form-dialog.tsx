@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,7 +51,7 @@ export function ServerFormDialog({
   onSaved,
 }: ServerFormDialogProps) {
   const { saveServer, testConnection } = useServersContext();
-  const { enabled, field } = usePrivacy();
+  const { enabled } = usePrivacy();
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState(String(defaultPort));
@@ -65,6 +66,9 @@ export function ServerFormDialog({
   const [sshDir, setSshDir] = useState("");
   const [detectedKeys, setDetectedKeys] = useState<string[]>([]);
   const [keyMessage, setKeyMessage] = useState<string | null>(null);
+  const [keyPutty, setKeyPutty] = useState(false);
+  const [keyEncrypted, setKeyEncrypted] = useState(false);
+  const [needsPassphrase, setNeedsPassphrase] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +92,9 @@ export function ServerFormDialog({
     setPassword("");
     setKeyPassphrase("");
     setKeyMessage(null);
+    setKeyPutty(false);
+    setKeyEncrypted(false);
+    setNeedsPassphrase(false);
   }, [open, server]);
 
   useEffect(() => {
@@ -102,21 +109,36 @@ export function ServerFormDialog({
       });
   }, [open, authType]);
 
-  const checkKey = async (path: string) => {
+  const checkKey = async (path: string, passphrase?: string) => {
     const trimmed = path.trim();
     if (!trimmed) {
       setKeyMessage(null);
-      return true;
+      setKeyPutty(false);
+      setKeyEncrypted(false);
+      setNeedsPassphrase(false);
+      return { ok: true, message: "", needsPassphrase: false };
     }
     try {
-      const result = await inspectSshPrivateKey(trimmed);
+      const result = await inspectSshPrivateKey(trimmed, passphrase);
+      setKeyPutty(result.putty);
+      setKeyEncrypted(result.encrypted);
+      setNeedsPassphrase(result.needsPassphrase);
       setKeyMessage(result.ok ? null : result.message);
-      return result.ok;
+      return result;
     } catch (err) {
-      setKeyMessage(String(err));
-      return false;
+      const message = String(err);
+      setKeyMessage(message);
+      setNeedsPassphrase(false);
+      return { ok: false, message, needsPassphrase: false };
     }
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const path = server?.keyPath ?? "";
+    if (!path.trim()) return;
+    void checkKey(path);
+  }, [open, server]);
 
   const browseKey = async () => {
     const picked = await openFile({
@@ -124,6 +146,10 @@ export function ServerFormDialog({
       directory: false,
       multiple: false,
       defaultPath: sshDir || undefined,
+      filters: [
+        { name: "Private keys", extensions: ["ppk", "pem"] },
+        { name: "All files", extensions: ["*"] },
+      ],
     });
     if (typeof picked === "string" && picked) {
       setKeyPath(picked);
@@ -157,9 +183,14 @@ export function ServerFormDialog({
       toast.error("SSH key path is required for key authentication.");
       return false;
     }
-    if (authType === "key" && !(await checkKey(keyPath))) {
-      toast.error("Choose an OpenSSH private key.");
-      return false;
+    if (authType === "key") {
+      const result = await checkKey(keyPath, keyPassphrase || undefined);
+      const unchanged =
+        Boolean(server) && keyPath.trim() === (server?.keyPath ?? "");
+      if (!result.ok && !(result.needsPassphrase && unchanged)) {
+        toast.error(result.message || "Choose a readable private key.");
+        return false;
+      }
     }
     if (authType === "password" && !password && !server) {
       toast.error("Password is required for new password-based servers.");
@@ -287,7 +318,12 @@ export function ServerFormDialog({
             {authType === "key" ? (
               <>
                 <div className="flex flex-col gap-2 sm:col-span-2">
-                  <Label htmlFor="server-key-path">Private key path</Label>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="server-key-path">Private key path</Label>
+                    {keyPutty ? (
+                      <Badge variant="outline">PuTTY</Badge>
+                    ) : null}
+                  </div>
                   <div className="flex gap-2">
                     <SecretInput
                       id="server-key-path"
@@ -296,11 +332,14 @@ export function ServerFormDialog({
                       onChange={(e) => {
                         setKeyPath(e.target.value);
                         setKeyMessage(null);
+                        setKeyPutty(false);
+                        setKeyEncrypted(false);
+                        setNeedsPassphrase(false);
                       }}
                       onBlur={() => void checkKey(keyPath)}
                       placeholder="C:\Users\you\.ssh\id_ed25519"
                       className="min-w-0 flex-1 font-mono text-xs"
-                      aria-invalid={keyMessage ? true : undefined}
+                      aria-invalid={keyMessage && !needsPassphrase ? true : undefined}
                       aria-describedby={keyMessage ? "server-key-error" : undefined}
                     />
                     <Button type="button" variant="outline" onClick={() => void browseKey()}>
@@ -315,30 +354,61 @@ export function ServerFormDialog({
                       enabled
                         ? "Detected keys"
                         : detectedKeys.length
-                          ? `Keys in ${sshDir || ".ssh"}`
-                          : "No keys found in .ssh"
+                          ? "Keys in .ssh and Documents"
+                          : "No keys found in .ssh or Documents"
                     }
                     onValueChange={(next) => {
                       setKeyPath(next);
                       void checkKey(next);
                     }}
-                    options={detectedKeys.map((file) => ({ value: file, label: field(file, "path") }))}
+                    options={detectedKeys.map((file) => {
+                      const putty = file.toLowerCase().endsWith(".ppk");
+                      const label = enabled
+                        ? putty
+                          ? "PuTTY key"
+                          : "key-file"
+                        : putty
+                          ? `${file} (PuTTY)`
+                          : file;
+                      return { value: file, label };
+                    })}
                   />
                   {keyMessage && (
-                    <p id="server-key-error" role="alert" className="text-xs text-status-critical">
+                    <p
+                      id="server-key-error"
+                      role={needsPassphrase ? "status" : "alert"}
+                      className={
+                        needsPassphrase
+                          ? "text-xs text-muted-foreground"
+                          : "text-xs text-status-critical"
+                      }
+                    >
                       <Masked text={keyMessage} />
                     </p>
                   )}
                 </div>
                 <div className="flex flex-col gap-2 sm:col-span-2">
-                  <Label htmlFor="server-passphrase">Key passphrase (optional)</Label>
+                  <Label htmlFor="server-passphrase">
+                    {keyEncrypted ? "Key passphrase" : "Key passphrase (optional)"}
+                  </Label>
                   <SecretInput
                     id="server-passphrase"
                     kind="secret"
                     type="password"
                     value={keyPassphrase}
                     onChange={(e) => setKeyPassphrase(e.target.value)}
+                    onBlur={() => {
+                      if (keyPath.trim()) void checkKey(keyPath, keyPassphrase || undefined);
+                    }}
+                    placeholder={
+                      keyEncrypted
+                        ? server
+                          ? "Leave blank to keep the stored passphrase"
+                          : "Required for this PuTTY key"
+                        : ""
+                    }
                     autoComplete="off"
+                    aria-invalid={keyEncrypted && keyMessage && !needsPassphrase ? true : undefined}
                   />
                 </div>
               </>

@@ -313,14 +313,23 @@ export interface SshKeyList {
 export interface KeyInspection {
   ok: boolean;
   message: string;
+  putty: boolean;
+  encrypted: boolean;
+  needsPassphrase: boolean;
 }
 
 export async function listSshPrivateKeys(): Promise<SshKeyList> {
   return invoke<SshKeyList>("list_ssh_private_keys");
 }
 
-export async function inspectSshPrivateKey(path: string): Promise<KeyInspection> {
-  return invoke<KeyInspection>("inspect_ssh_private_key", { path });
+export async function inspectSshPrivateKey(
+  path: string,
+  passphrase?: string,
+): Promise<KeyInspection> {
+  return invoke<KeyInspection>("inspect_ssh_private_key", {
+    path,
+    passphrase: passphrase ?? null,
+  });
 }
 
 export async function logsForTrace(serverId: string, traceId: string, window: number): Promise<LogLine[]> {
