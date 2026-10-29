@@ -460,6 +460,7 @@ pub fn upsert_uptime_check(
     state: State<AppState>,
     mut check: UptimeCheck,
 ) -> Result<UptimeCheck, String> {
+    crate::license::require_write()?;
     ensure_server(&state, &check.server_id)?;
     check.url = local::validate_url(&check.url)?.to_string();
     if !(15..=86400).contains(&check.interval_seconds) {
@@ -499,6 +500,7 @@ pub fn delete_uptime_check(
     server_id: String,
     check_id: String,
 ) -> Result<(), String> {
+    crate::license::require_write()?;
     ensure_server(&state, &server_id)?;
     let db = state.metrics.lock();
     let tx = db

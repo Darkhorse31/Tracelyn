@@ -55,6 +55,7 @@ import markLight from "@/assets/tracelyn-mark.png";
 import markDark from "@/assets/tracelyn-mark-dark.png";
 
 const NAV = [
+  { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
   { to: "/", label: "Overview", icon: LayoutDashboard },
   { to: "/servers", label: "All servers", icon: Server },
   { to: "/server", label: "Server", icon: Activity },

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts src/lib/license.test.ts src/lib/fleet-view.test.ts src/lib/log-view.test.ts src/lib/log-query.test.ts",
+    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts src/lib/license.test.ts src/lib/fleet-view.test.ts src/lib/log-view.test.ts src/lib/log-query.test.ts src/lib/dashboards.test.ts",
     "tauri": "tauri",
     "desktop:build": "node scripts/build-desktop.mjs",
     "tauri:release": "node scripts/build-desktop.mjs --release"
@@ -33,6 +33,7 @@
     "lucide-react": "^1.61.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-grid-layout": "^2.3.0",
     "react-router-dom": "^7.18.4",
     "shadcn": "^4.22.1",
     "sonner": "^2.0.8",
@@ -46,6 +47,7 @@
     "@types/node": "^26.6.5",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/react-grid-layout": "^1.3.6",
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "~6.0.3",
     "vite": "^8.0.16"

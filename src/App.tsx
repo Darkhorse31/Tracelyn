@@ -1,3 +1,4 @@
+import { DashboardsPage } from "@/pages/dashboards-page"
 import { LicenseProvider } from "@/contexts/license-context";
 import { UpdatesProvider } from "@/components/account/updates";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -44,6 +45,7 @@ function App() {
         <Routes>
           <Route element={<AppShell />}>
             <Route index element={<HomePage />} />
+            <Route path="dashboards" element={<DashboardsPage />} />
             <Route path="servers" element={<AllServersPage />} />
             <Route path="welcome" element={<WelcomePage />} />
             <Route path="server" element={<ServerPage />} />

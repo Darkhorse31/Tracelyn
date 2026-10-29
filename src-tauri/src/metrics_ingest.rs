@@ -71,7 +71,11 @@ pub fn persist_samples(state: &AppState, batch: Vec<RawSample>) {
     if batch.is_empty() {
         return;
     }
-    if let Err(err) = state.metrics.lock().insert_raw_batch(&batch) {
+    let store = state.metrics.lock();
+    if let Err(err) = crate::phase_b2::record_baselines(store.connection(), &batch) {
+        eprintln!("baseline persist: {err}");
+    }
+    if let Err(err) = store.insert_raw_batch(&batch) {
         eprintln!("metrics persist: {}", err);
     }
 }

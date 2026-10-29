@@ -1,3 +1,4 @@
+mod phase_b2;
 mod license;
 mod alerts;
 mod crash;
@@ -63,6 +64,7 @@ pub fn run() {
             hub.set_app(handle.clone());
             hub.clone().spawn_flusher();
             metrics_ingest::spawn_storage_maintenance(handle.clone());
+            phase_b2::spawn(handle.clone());
             infra::setup(handle.clone()).map_err(std::io::Error::other)?;
             intel::spawn_scheduler(handle.clone());
             install_tray(app).map_err(|err| std::io::Error::other(err))?;
@@ -83,6 +85,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            phase_b2::documents,
+            phase_b2::save_document,
+            phase_b2::delete_document,
+            phase_b2::run_synthetic,
+            phase_b2::synthetic_results,
+            phase_b2::baseline,
+            phase_b2::what_changed,
             license::license_status,
             license::license_activate,
             license::license_deactivate,

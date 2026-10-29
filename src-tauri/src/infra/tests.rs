@@ -88,7 +88,7 @@ fn nginx_upstreams_weight_disabled_direct_and_logs() {
     assert_eq!(rows[0].number("weight"), Some(3.));
     assert_eq!(rows[1].state, "down");
     assert_eq!(nginx::log_paths(config).len(), 2);
-    nginx::add_log_health(&mut rows, include_str!("fixtures/nginx.log"));
+    nginx::add_log_health(&mut rows, include_str!("fixtures/nginx-log.txt"));
     assert_eq!(rows[0].number("errorPercent"), Some(50.));
     assert_eq!(rows[0].number("recentConnectionErrors"), Some(1.));
 }
@@ -188,7 +188,7 @@ fn disk_all_mounts_ports_ipv6_and_process() {
 }
 #[test]
 fn security_logs_updates_bans_sessions() {
-    let rows = parsers::ssh_failures(include_str!("fixtures/auth.log"));
+    let rows = parsers::ssh_failures(include_str!("fixtures/auth-log.txt"));
     assert_eq!(rows[0].name, "198.51.100.4");
     assert_eq!(rows[0].number("attempts"), Some(2.));
     assert_eq!(rows.len(), 2);
