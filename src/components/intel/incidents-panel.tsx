@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { usePrivacy } from "@/contexts/privacy-context";
+import { issueLabels } from "@/lib/incident-health";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { EmptyState, Notice } from "@/components/status/notice";
 import { Button } from "@/components/ui/button";
@@ -10,10 +12,13 @@ import { listIncidents } from "@/pages/intel/api";
 import type { Incident } from "@/pages/intel/types";
 
 export function IncidentsPanel() {
+  const { mask, enabled } = usePrivacy();
   const { servers, selectedServerId } = useServersContext();
-  const [scope, setScope] = useState<"selected" | "all">("selected");
+  const [scope, setScope] = useState<"selected" | "all">("all");
   const [severity, setSeverity] = useState<"all" | "info" | "warning" | "critical">("all");
   const [status, setStatus] = useState<"all" | "open" | "ack" | "resolved">("all");
+  const [kind, setKind] = useState("all");
+  const [serverFilter, setServerFilter] = useState("all");
   const [rows, setRows] = useState<Incident[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const serverId = scope === "all" ? undefined : selectedServerId ?? undefined;
@@ -21,7 +26,7 @@ export function IncidentsPanel() {
   useEffect(() => {
     let cancelled = false;
     setRows(null);
-    listIncidents(serverId)
+    const refresh = () => listIncidents(serverId)
       .then((next) => {
         if (!cancelled) {
           setRows(next);
@@ -31,17 +36,22 @@ export function IncidentsPanel() {
       .catch((err) => {
         if (!cancelled) setError(String(err));
       });
+    void refresh();
+    const timer = setInterval(refresh, 5000);
     return () => {
+      clearInterval(timer);
       cancelled = true;
     };
   }, [serverId]);
 
   const nameOf = (id: string) => servers.find((server) => server.id === id)?.name ?? id;
   const visible = (rows ?? []).filter((incident) => {
+    if (kind !== "all" && incident.kind !== kind) return false;
+    if (serverFilter !== "all" && incident.serverId !== serverFilter) return false;
     if (severity !== "all" && incident.severity !== severity) return false;
     if (status !== "all" && incident.status !== status) return false;
     return true;
-  });
+  }).sort((a,b) => Number(a.status === "resolved") - Number(b.status === "resolved") || b.openedAtMs - a.openedAtMs);
 
   return (
     <Card>
@@ -49,12 +59,12 @@ export function IncidentsPanel() {
         <div>
           <CardTitle className="text-base">Incidents</CardTitle>
           <CardDescription>
-            Open alerts on the same server within 30 minutes share one incident. The timeline
-            gathers the alert, anomalies, new error patterns, restarts, deploys, and audit actions
-            from 15 minutes on either side.
+            Every recorded issue has a timeline and next steps. Review active issues or look back at resolved incidents.
           </CardDescription>
         </div>
         <div className="flex flex-wrap justify-end gap-2" role="group" aria-label="Incident filters">
+          <select aria-label="Filter by server" className="rounded-lg border bg-card px-3 py-2 text-sm" value={serverFilter} onChange={e => setServerFilter(e.target.value)}><option value="all">Every server</option>{servers.map((s,index) => <option key={s.id} value={s.id}>{enabled ? `Server ${index + 1}` : mask(s.name)}</option>)}</select>
+          <select aria-label="Filter by issue type" className="rounded-lg border bg-card px-3 py-2 text-sm" value={kind} onChange={e => setKind(e.target.value)}><option value="all">Every issue type</option>{[...new Set((rows ?? []).map(i=>i.kind))].map(k=><option key={k} value={k}>{issueLabels[k] ?? "Other issue"}</option>)}</select>
           <Button type="button" size="sm" variant={scope === "selected" ? "default" : "outline"} onClick={() => setScope("selected")} aria-pressed={scope === "selected"}>
             This server
           </Button>
@@ -79,12 +89,12 @@ export function IncidentsPanel() {
         )}
         {error && (
           <Notice tone="critical" title="Could not load incidents">
-            {error}
+            Check your connection and try again.
           </Notice>
         )}
         {(scope === "all" || selectedServerId) && rows === null && !error && <Skeleton className="h-24 w-full" />}
         {rows && rows.length === 0 && (
-          <EmptyState title="No incidents" description="Rules that fire, and alerts from the Alerts page, are grouped here." />
+          <EmptyState title="No incidents" description="No issues have been recorded. Keep your servers connected so monitoring can check them." />
         )}
         {rows && rows.length > 0 && visible.length === 0 && (
           <EmptyState title="No matching incidents" description="Change the severity or status filter to see more history." />
@@ -103,20 +113,23 @@ export function IncidentsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((incident) => (
+                {visible.map((incident, index) => (
+                  <Fragment key={incident.id}>
+                  {(index === 0 || (visible[index-1].status === "resolved") !== (incident.status === "resolved")) && <tr><th colSpan={5} scope="colgroup" className="bg-muted px-3 py-3 font-semibold">{incident.status === "resolved" ? "Resolved incidents" : "Active incidents"}</th></tr>}
                   <tr key={incident.id} className="border-b border-border/70">
                     <th scope="row" className="py-2 pr-3 font-medium">
                       <Link className="underline-offset-4 hover:underline" to={`/intel/incidents/${incident.id}`}>
-                        {incident.title}
+                        {enabled ? "Issue on a monitored server" : mask(incident.title)}
                       </Link>
                     </th>
-                    <td className="py-2 pr-3 text-muted-foreground">{nameOf(incident.serverId)}</td>
+                    <td className="py-2 pr-3 text-muted-foreground">{enabled ? "Monitored server" : mask(nameOf(incident.serverId))}</td>
                     <td className="py-2 pr-3">
                       <SeverityBadge severity={incident.severity} />
                     </td>
                     <td className="py-2 pr-3">{statusLabel(incident.status)}</td>
                     <td className="py-2 font-mono text-xs">{formatTs(incident.updatedAtMs)}</td>
                   </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

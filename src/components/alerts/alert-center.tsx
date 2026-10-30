@@ -1,3 +1,4 @@
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bell } from "lucide-react";
@@ -35,11 +36,13 @@ function beep() {
 }
 
 export function AlertCenter() {
+  const { enabled, mask } = usePrivacy();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [rows, setRows] = useState<Incident[]>([]);
   const [sound, setSound] = useState(true);
+  useEffect(() => { if (enabled) toast.dismiss(); }, [enabled]);
 
   const refresh = () => {
     void unreadAlertCount().then(setUnread).catch(() => undefined);
@@ -55,7 +58,7 @@ export function AlertCenter() {
 
   useEffect(
     () =>
-      listenWhileMounted<{ title?: string; path?: string }>("intel-notice", (event) => {
+      listenWhileMounted<{ title?: string; body?: string; path?: string }>("intel-notice", (event) => {
         refresh();
         if (sound) {
           try {
@@ -64,13 +67,14 @@ export function AlertCenter() {
             /* audio can be blocked until a click */
           }
         }
-        toast.warning(event.payload.title ?? "Tracelyn alert", {
+        (event.payload.title?.startsWith("Resolved:") ? toast.success : toast.warning)(enabled ? "Monitoring update" : mask(event.payload.title ?? "Monitoring update"), {
+          description: enabled ? "Open the incident for details" : mask(event.payload.body ?? "").replaceAll(";", ","),
           action: event.payload.path
             ? { label: "Open", onClick: () => navigate(event.payload.path ?? "/alerts") }
             : undefined,
         });
       }),
-    [navigate, sound],
+    [navigate, sound, enabled, mask],
   );
 
   useEffect(
@@ -120,13 +124,13 @@ export function AlertCenter() {
           </label>
         </div>
         {rows.length === 0 ? (
-          <p className="px-1 py-6 text-center text-sm text-muted-foreground">No open alerts. You are all clear.</p>
+          <p className="px-1 py-6 text-center text-sm text-muted-foreground">No active incidents have been recorded.</p>
         ) : (
           <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto">
             {rows.map((row) => (
               <li key={row.id} className="rounded-lg border border-border px-2 py-2">
                 <Link to={`/intel/incidents/${row.id}`} className="text-sm font-medium hover:underline" onClick={() => setOpen(false)}>
-                  {row.title}
+                  {enabled ? "Issue on a monitored server" : mask(row.title)}
                 </Link>
                 <p className="text-xs text-muted-foreground">
                   {row.severity} · {row.status}
@@ -153,8 +157,8 @@ export function AlertCenter() {
             ))}
           </ul>
         )}
-        <Link to="/alerts" className="mt-2 block px-1 text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={() => setOpen(false)}>
-          Alert history
+        <Link to="/incidents" className="mt-2 block px-1 text-xs text-muted-foreground underline-offset-4 hover:underline" onClick={() => setOpen(false)}>
+          All incidents
         </Link>
       </DropdownMenuContent>
     </DropdownMenu>

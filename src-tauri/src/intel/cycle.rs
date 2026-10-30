@@ -1,16 +1,17 @@
 //! One evaluation pass: rules, seasonal anomalies, restarts, and alert grouping.
 
 use super::logic::{
-    advance_gate, clear_level, clip_chars, hot_cool, hour_of_week, log_rate_per_min, restart_increase,
-    step_model, Gate,
+    advance_gate, clear_level, clip_chars, hot_cool, hour_of_week, log_rate_per_min,
+    restart_increase, step_model, Gate,
 };
 use super::policy::{
-    cooldown_elapsed, deploy_detected, error_signature, in_quiet_hours, minute_of_day, new_error_value,
-    notice_fingerprint, restart_loop_increase,
+    cooldown_elapsed, deploy_detected, error_signature, in_quiet_hours, minute_of_day,
+    new_error_value, notice_fingerprint, restart_loop_increase,
 };
 use super::store;
 use super::types::{
-    default_metric_key, is_low_kind, AnomalyEvent, IntelError, IntelRule, RuleRuntime, WATCH_METRICS,
+    default_metric_key, is_low_kind, AnomalyEvent, IntelError, IntelRule, RuleRuntime,
+    WATCH_METRICS,
 };
 use regex::Regex;
 use rusqlite::Connection;
@@ -57,7 +58,7 @@ pub struct Sample<'a> {
     pub eval_anomaly: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Notice {
     pub title: String,
     pub body: String,
@@ -75,6 +76,17 @@ pub struct CycleOut {
 pub fn run(conn: &Connection, sample: &Sample<'_>) -> Result<CycleOut, IntelError> {
     let tx = conn.unchecked_transaction()?;
     let mut out = CycleOut::default();
+    super::incidents::migrate(&tx)?;
+    if sample.eval_metrics {
+        let snapshot = sample
+            .metrics
+            .iter()
+            .filter(|(_, v)| v.is_finite())
+            .map(|(k, v)| format!("{k}: {v:.2}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        tx.execute("INSERT INTO incident_last_metrics VALUES (?1,?2,?3) ON CONFLICT(server_id) DO UPDATE SET ts_ms=excluded.ts_ms,metrics=excluded.metrics", rusqlite::params![sample.server_id,sample.ts_ms,snapshot])?;
+    }
     let mut metrics = sample.metrics.clone();
     if sample.eval_metrics {
         for (key, value) in store::latest_metrics(&tx, sample.server_id, sample.ts_ms - 120_000)? {
@@ -85,8 +97,31 @@ pub fn run(conn: &Connection, sample: &Sample<'_>) -> Result<CycleOut, IntelErro
         store::record_restart_sample(&tx, sample.server_id, &app.id, sample.ts_ms, app.restarts)?;
     }
     let rules = store::list_rules(&tx)?;
-    for rule in rules.iter().filter(|rule| rule.enabled && rule_applies(rule, sample.server_id)) {
-        if crate::companion_history::owns_rule(sample.server_id, rule) { continue; }
+    for rule in rules
+        .iter()
+        .filter(|rule| rule.enabled && rule_applies(rule, sample.server_id))
+    {
+        if crate::companion_history::owns_rule(sample.server_id, rule) {
+            continue;
+        }
+        if rule.params.app_id.is_empty()
+            && matches!(
+                rule.kind.as_str(),
+                "app_down" | "app_crash" | "restart_loop" | "deploy"
+            )
+            && !sample.apps.is_empty()
+        {
+            for app in sample.apps {
+                let mut scoped = rule.clone();
+                scoped.id = format!("{}:{}", rule.id, app.id);
+                scoped.params.app_id = app.id.clone();
+                scoped.name = format!("{} for {}", rule.name, app.name);
+                if let Err(err) = eval_rule(&tx, &scoped, sample, &metrics, &mut out) {
+                    out.errors.push(format!("{}: {err}", scoped.name));
+                }
+            }
+            continue;
+        }
         if let Err(err) = eval_rule(&tx, rule, sample, &metrics, &mut out) {
             out.errors.push(format!("{}: {err}", rule.name));
         }
@@ -100,18 +135,102 @@ pub fn run(conn: &Connection, sample: &Sample<'_>) -> Result<CycleOut, IntelErro
             }
         }
     }
+    if sample.eval_metrics {
+        for (service, _) in sample.services {
+            let mut rule = IntelRule {
+                id: format!("detected:service:{service}"),
+                server_id: Some(sample.server_id.into()),
+                kind: "service_stopped".into(),
+                name: format!("Service stopped: {service}"),
+                enabled: true,
+                severity: "critical".into(),
+                params: super::types::RuleParams::default(),
+                created_at_ms: 0,
+                updated_at_ms: 0,
+                firing: false,
+            };
+            rule.params.pattern = service.clone();
+            rule.params.threshold = 0.0;
+            rule.params.clear_threshold = Some(0.5);
+            rule.params.duration_secs = 30;
+            rule.params.clear_duration_secs = 30;
+            eval_rule(&tx, &rule, sample, &metrics, &mut out)?;
+        }
+        for (kind, key, title, threshold) in [
+            (
+                "ssl_expiry",
+                "ssl.days_remaining",
+                "Website certificate needs renewal",
+                21.0,
+            ),
+            (
+                "disk_forecast",
+                "disk.forecast_days",
+                "Storage may run out soon",
+                7.0,
+            ),
+            (
+                "uptime",
+                "health.up",
+                "Website availability check failed",
+                0.0,
+            ),
+        ] {
+            if !metrics.contains_key(key) {
+                continue;
+            }
+            let mut rule = IntelRule {
+                id: format!("detected:{kind}"),
+                server_id: Some(sample.server_id.into()),
+                kind: kind.into(),
+                name: title.into(),
+                enabled: true,
+                severity: "critical".into(),
+                params: super::types::RuleParams::default(),
+                created_at_ms: 0,
+                updated_at_ms: 0,
+                firing: false,
+            };
+            rule.params.metric_key = key.into();
+            rule.params.threshold = threshold;
+            rule.params.clear_threshold = Some(threshold + 0.5);
+            rule.params.duration_secs = 30;
+            rule.params.clear_duration_secs = 30;
+            eval_rule(&tx, &rule, sample, &metrics, &mut out)?;
+        }
+    }
+    for line in sample.logs.iter().filter(|line| {
+        line.ts_ms >= sample.ts_ms - 120_000 && super::incidents::is_oom_kill(&line.text)
+    }) {
+        if let Some(notice) = super::incidents::open(
+            &tx,
+            sample.server_id,
+            sample.server_name,
+            &format!("oom:{}", line.id),
+            &line.id,
+            "oom",
+            "Application stopped because memory ran out",
+            "The server reported that it stopped a process to free memory",
+            "critical",
+            line.ts_ms,
+            &metrics,
+        )? {
+            out.notices.push(notice);
+            out.fired += 1;
+        }
+    }
     observe_restarts(&tx, sample)?;
     out.notices.extend(fold_alerts(&tx, sample)?);
     refresh_windows(&tx, sample)?;
     tx.commit()?;
-    if out.notices.len() > 10 {
-        out.notices.truncate(10);
-    }
     Ok(out)
 }
 
 fn rule_applies(rule: &IntelRule, server_id: &str) -> bool {
-    rule.server_id.as_ref().map(|id| id == server_id).unwrap_or(true)
+    rule.server_id
+        .as_ref()
+        .map(|id| id == server_id)
+        .unwrap_or(true)
 }
 
 fn eval_rule(
@@ -129,7 +248,11 @@ fn eval_rule(
             return Ok(());
         }
     };
-    let clear = clear_level(&rule.kind, rule.params.threshold, rule.params.clear_threshold);
+    let clear = clear_level(
+        &rule.kind,
+        rule.params.threshold,
+        rule.params.clear_threshold,
+    );
     let (hot, cooling) = hot_cool(&rule.kind, value, rule.params.threshold, clear);
     let was = state.firing;
     let gate = advance_gate(
@@ -150,49 +273,84 @@ fn eval_rule(
     state.last_value = Some(value);
     state.last_error = None;
     let quiet = match (rule.params.quiet_start_min, rule.params.quiet_end_min) {
-        (Some(start), Some(end)) => {
-            in_quiet_hours(minute_of_day(sample.ts_ms, sample.utc_offset_secs), start, end)
-        }
+        (Some(start), Some(end)) => in_quiet_hours(
+            minute_of_day(sample.ts_ms, sample.utc_offset_secs),
+            start,
+            end,
+        ),
         _ => false,
     };
     let cooldown_ms = rule.params.cooldown_secs as i64 * 1000;
-    let fingerprint = notice_fingerprint(sample.server_id, &rule.kind, &rule.params.app_id);
-    if state.firing && !was {
+    let target = if !rule.params.app_id.is_empty() {
+        rule.params.app_id.clone()
+    } else if !rule.params.host.is_empty() {
+        format!("{}:{}", rule.params.host, rule.params.port)
+    } else if !rule.params.pattern.is_empty() {
+        rule.params.pattern.clone()
+    } else {
+        default_metric_key(&rule.kind, &rule.params.metric_key)
+    };
+    let key = super::incidents::issue_key(&rule.kind, &target);
+    let fingerprint = if matches!(rule.kind.as_str(), "app_crash" | "restart_loop" | "deploy") {
+        notice_fingerprint(sample.server_id, &rule.kind, &rule.params.app_id)
+    } else {
+        format!("{}:{key}", sample.server_id)
+    };
+    if state.firing && (!was || state.last_notify_ms.is_none()) {
         let message = alert_message(rule, sample.server_name, value);
-        let incident_id = attach_alert(conn, sample, &rule.severity, &rule.name, &message)?;
-        out.fired += 1;
-        let snoozed = store::incident_snoozed(conn, &incident_id, sample.ts_ms)?;
-        let allowed = !quiet
-            && !snoozed
-            && cooldown_elapsed(state.last_notify_ms, sample.ts_ms, cooldown_ms)
-            && store::admit_fingerprint(conn, &fingerprint, sample.ts_ms, 15 * 60 * 1000)?;
-        if allowed {
-            state.last_notify_ms = Some(sample.ts_ms);
-            out.notices.push(Notice {
-                title: format!("Tracelyn: {}", rule.name),
-                body: message,
-                path: format!("/intel/incidents/{incident_id}"),
-            });
+        let notice = super::incidents::open(
+            conn,
+            sample.server_id,
+            sample.server_name,
+            &key,
+            &rule.id,
+            &rule.kind,
+            &rule.name,
+            &message,
+            &rule.severity,
+            state.condition_since_ms.unwrap_or(sample.ts_ms),
+            metrics,
+        )?;
+        let pending_key = format!("pending:{}:{key}", sample.server_id);
+        let notice = notice.or_else(|| {
+            store::meta_get(conn, &pending_key)
+                .ok()
+                .flatten()
+                .and_then(|v| serde_json::from_str::<Notice>(&v).ok())
+        });
+        if !was {
+            out.fired += 1;
         }
-    } else if state.firing && !quiet && state.last_notify_ms.is_none() {
-        let message = alert_message(rule, sample.server_name, value);
-        let allowed = cooldown_elapsed(None, sample.ts_ms, cooldown_ms)
-            && store::admit_fingerprint(conn, &fingerprint, sample.ts_ms, 15 * 60 * 1000)?;
-        if allowed {
-            state.last_notify_ms = Some(sample.ts_ms);
-            out.notices.push(Notice {
-                title: format!("Tracelyn: {}", rule.name),
-                body: message,
-                path: "/alerts".into(),
-            });
+        if let Some(notice) = notice {
+            let allowed = !quiet
+                && cooldown_elapsed(state.last_notify_ms, sample.ts_ms, cooldown_ms)
+                && store::admit_fingerprint(conn, &fingerprint, sample.ts_ms, 15 * 60 * 1000)?;
+            if allowed {
+                out.notices.push(notice);
+                state.last_notify_ms = Some(sample.ts_ms);
+                store::meta_set(conn, &pending_key, "")?;
+            } else {
+                store::meta_set(
+                    conn,
+                    &pending_key,
+                    &serde_json::to_string(&notice)
+                        .map_err(|e| super::types::IntelError::Bad(e.to_string()))?,
+                )?;
+            }
         }
     } else if !state.firing && was {
-        let message = format!("{} cleared ({:.2})", rule.name, value);
-        let _ = attach_alert(conn, sample, "info", &rule.name, &message)?;
-        out.cleared += 1;
-        if !store::any_firing(conn, sample.server_id)? {
-            store::resolve_recent(conn, sample.server_id, sample.ts_ms)?;
+        store::meta_set(conn, &format!("pending:{}:{key}", sample.server_id), "")?;
+        if let Some(notice) = super::incidents::resolve(
+            conn,
+            sample.server_id,
+            sample.server_name,
+            &key,
+            &rule.id,
+            sample.ts_ms,
+        )? {
+            out.notices.push(notice);
         }
+        out.cleared += 1;
     }
     store::save_state(conn, &rule.id, sample.server_id, &state)?;
     Ok(())
@@ -219,7 +377,10 @@ fn resolve_value(
         "disk_forecast" | "server_unreachable" | "redis_down" | "ssh_fail_burst" => {
             let key = default_metric_key(&rule.kind, &rule.params.metric_key);
             if rule.kind == "ssh_fail_burst" {
-                return Ok(sample.fail_count.map(|count| count as f64).or_else(|| metrics.get(&key).copied()));
+                return Ok(sample
+                    .fail_count
+                    .map(|count| count as f64)
+                    .or_else(|| metrics.get(&key).copied()));
             }
             Ok(metrics.get(&key).copied())
         }
@@ -235,6 +396,11 @@ fn probe_or_metric(
     metrics: &HashMap<String, f64>,
     state: &mut RuleRuntime,
 ) -> Result<Option<f64>, IntelError> {
+    if !rule.params.metric_key.is_empty() {
+        if let Some(value) = metrics.get(&rule.params.metric_key) {
+            return Ok(Some(*value));
+        }
+    }
     if let Some(probed) = sample.probes.get(&rule.id) {
         state.checked_at_ms = sample.ts_ms;
         return match probed {
@@ -246,7 +412,11 @@ fn probe_or_metric(
         };
     }
     if rule.kind == "app_down" {
-        if let Some(value) = metrics.get("health.up").copied() {
+        if let Some(value) = metrics
+            .get("health.up")
+            .copied()
+            .filter(|_| rule.params.app_id.is_empty())
+        {
             return Ok(Some(value));
         }
         if !sample.eval_metrics || sample.apps.is_empty() {
@@ -258,9 +428,15 @@ fn probe_or_metric(
     Ok(state.last_value)
 }
 
-fn scoped_apps<'a>(rule: &IntelRule, sample: &'a Sample<'_>) -> impl Iterator<Item = &'a AppSignal> {
+fn scoped_apps<'a>(
+    rule: &IntelRule,
+    sample: &'a Sample<'_>,
+) -> impl Iterator<Item = &'a AppSignal> {
     let app_id = rule.params.app_id.clone();
-    sample.apps.iter().filter(move |app| app_id.is_empty() || app.id == app_id)
+    sample
+        .apps
+        .iter()
+        .filter(move |app| app_id.is_empty() || app.id == app_id)
 }
 
 fn crash_value(rule: &IntelRule, sample: &Sample<'_>) -> Option<f64> {
@@ -271,7 +447,11 @@ fn crash_value(rule: &IntelRule, sample: &Sample<'_>) -> Option<f64> {
     Some(if crashed { 1.0 } else { 0.0 })
 }
 
-fn restart_loop_value(conn: &Connection, rule: &IntelRule, sample: &Sample<'_>) -> Result<Option<f64>, IntelError> {
+fn restart_loop_value(
+    conn: &Connection,
+    rule: &IntelRule,
+    sample: &Sample<'_>,
+) -> Result<Option<f64>, IntelError> {
     if sample.apps.is_empty() {
         return Ok(None);
     }
@@ -307,7 +487,11 @@ fn new_error_count(conn: &Connection, sample: &Sample<'_>) -> Result<Option<f64>
     Ok(Some(new_error_value(known, unseen)))
 }
 
-fn deploy_value(conn: &Connection, rule: &IntelRule, sample: &Sample<'_>) -> Result<Option<f64>, IntelError> {
+fn deploy_value(
+    conn: &Connection,
+    rule: &IntelRule,
+    sample: &Sample<'_>,
+) -> Result<Option<f64>, IntelError> {
     if sample.apps.is_empty() {
         return Ok(None);
     }
@@ -335,7 +519,11 @@ fn deploy_value(conn: &Connection, rule: &IntelRule, sample: &Sample<'_>) -> Res
     Ok(Some(if hit { 1.0 } else { 0.0 }))
 }
 
-fn service_value(rule: &IntelRule, sample: &Sample<'_>, metrics: &HashMap<String, f64>) -> Option<f64> {
+fn service_value(
+    rule: &IntelRule,
+    sample: &Sample<'_>,
+    metrics: &HashMap<String, f64>,
+) -> Option<f64> {
     let name = if rule.params.pattern.is_empty() {
         default_metric_key(&rule.kind, &rule.params.metric_key)
     } else {
@@ -367,7 +555,11 @@ fn ssh_login_value(conn: &Connection, sample: &Sample<'_>) -> Result<Option<f64>
             fresh += 1;
         }
     }
-    Ok(Some(if known && fresh > 0 { fresh as f64 } else { 0.0 }))
+    Ok(Some(if known && fresh > 0 {
+        fresh as f64
+    } else {
+        0.0
+    }))
 }
 
 fn log_rate(conn: &Connection, rule: &IntelRule, sample: &Sample<'_>) -> Result<f64, IntelError> {
@@ -410,11 +602,12 @@ fn alert_message(rule: &IntelRule, server_name: &str, value: f64) -> String {
         ),
         _ => {
             let key = default_metric_key(&rule.kind, &rule.params.metric_key);
-            let sense = if is_low_kind(&rule.kind) { "at or below" } else { "at or above" };
-            format!(
-                "{key} is {value:.2}, {sense} {:.2}",
-                rule.params.threshold
-            )
+            let sense = if is_low_kind(&rule.kind) {
+                "at or below"
+            } else {
+                "at or above"
+            };
+            format!("{key} is {value:.2}, {sense} {:.2}", rule.params.threshold)
         }
     };
     format!("{server_name}: {detail}")
@@ -425,34 +618,29 @@ fn refresh_windows(conn: &Connection, sample: &Sample<'_>) -> Result<(), IntelEr
         if incident.status == "resolved" {
             continue;
         }
-        if sample.ts_ms > incident.opened_at_ms.saturating_add(super::timeline::SIDE_MS) {
+        if sample.ts_ms
+            > incident
+                .opened_at_ms
+                .saturating_add(super::timeline::SIDE_MS)
+        {
             continue;
         }
-        super::timeline::fill_incident_window(conn, &incident.id, sample.server_id, incident.opened_at_ms)?;
+        super::timeline::fill_incident_window(
+            conn,
+            &incident.id,
+            sample.server_id,
+            incident.opened_at_ms,
+        )?;
     }
     Ok(())
 }
 
-fn attach_alert(
+fn observe_metric(
     conn: &Connection,
     sample: &Sample<'_>,
-    severity: &str,
-    title: &str,
-    message: &str,
-) -> Result<String, IntelError> {
-    let id = store::open_incident(
-        conn,
-        sample.server_id,
-        &clip_chars(title, 120),
-        severity,
-        sample.ts_ms,
-    )?;
-    store::add_timeline(conn, &id, sample.ts_ms, "alert", message)?;
-    store::touch_incident(conn, &id, sample.ts_ms)?;
-    Ok(id)
-}
-
-fn observe_metric(conn: &Connection, sample: &Sample<'_>, key: &str, value: f64) -> Result<(), IntelError> {
+    key: &str,
+    value: f64,
+) -> Result<(), IntelError> {
     if !value.is_finite() {
         return Ok(());
     }
@@ -516,20 +704,50 @@ fn observe_restarts(conn: &Connection, sample: &Sample<'_>) -> Result<(), IntelE
 }
 
 fn fold_alerts(conn: &Connection, sample: &Sample<'_>) -> Result<Vec<Notice>, IntelError> {
-    let rows = store::recent_open_alerts(conn, sample.server_id, sample.ts_ms - 15 * 60 * 1000)?;
+    let rows = store::recent_open_alerts(conn, sample.server_id, 0)?;
     let mut notices = Vec::new();
     for (id, name, message, ts) in rows {
-        if !store::claim_alert(conn, &id, ts)? {
-            continue;
+        let (rule_id, kind, target, resolved): (String,String,String,Option<i64>) = conn.query_row(
+            "SELECT e.rule_id, COALESCE(r.kind,'metric'), COALESCE(e.metric_key,''), e.resolved_at_ms
+             FROM alert_events e LEFT JOIN alert_rules r ON r.id=e.rule_id WHERE e.id=?1",
+            [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
+        let target = if target.is_empty() && kind == "metric" {
+            name.clone()
+        } else {
+            target
+        };
+        let key = super::incidents::issue_key(&kind, &target);
+        if store::claim_alert(conn, &id, ts)? {
+            if let Some(notice) = super::incidents::open(
+                conn,
+                sample.server_id,
+                sample.server_name,
+                &key,
+                &rule_id,
+                &kind,
+                &name,
+                &message,
+                "critical",
+                ts,
+                sample.metrics,
+            )? {
+                notices.push(notice);
+            }
         }
-        let incident = store::open_incident(conn, sample.server_id, &clip_chars(&name, 120), "critical", ts)?;
-        store::add_timeline(conn, &incident, ts, "alert", &message)?;
-        store::touch_incident(conn, &incident, sample.ts_ms)?;
-        notices.push(Notice {
-            title: format!("Tracelyn: {name}"),
-            body: message,
-            path: format!("/intel/incidents/{incident}"),
-        });
+        if let Some(end) = resolved.filter(|_| {
+            store::claim_alert(conn, &format!("{id}:resolved"), sample.ts_ms).unwrap_or(false)
+        }) {
+            if let Some(notice) = super::incidents::resolve(
+                conn,
+                sample.server_id,
+                sample.server_name,
+                &key,
+                &rule_id,
+                end,
+            )? {
+                notices.push(notice);
+            }
+        }
     }
     Ok(notices)
 }
@@ -540,6 +758,35 @@ mod tests {
     use crate::alerts::{migrate_rules, AlertHistoryStore};
     use crate::intel::store;
     use crate::intel::types::{IntelRule, RuleParams};
+
+    #[test]
+    fn service_flapping_does_not_duplicate_or_resolve_early() {
+        let conn = conn();
+        let metrics = HashMap::new();
+        let probes = HashMap::new();
+        let down = [("nginx".into(), false)];
+        let up = [("nginx".into(), true)];
+        let mut s = sample(&metrics, &[], &[], &probes, 0);
+        s.services = &down;
+        assert!(run(&conn, &s).unwrap().notices.is_empty());
+        s.ts_ms = 30_000;
+        assert_eq!(run(&conn, &s).unwrap().notices.len(), 1);
+        s.ts_ms = 35_000;
+        s.services = &up;
+        assert!(run(&conn, &s).unwrap().notices.is_empty());
+        s.ts_ms = 40_000;
+        s.services = &down;
+        assert!(run(&conn, &s).unwrap().notices.is_empty());
+        s.ts_ms = 45_000;
+        s.services = &up;
+        assert!(run(&conn, &s).unwrap().notices.is_empty());
+        s.ts_ms = 75_000;
+        let recovered = run(&conn, &s).unwrap();
+        assert_eq!(recovered.notices.len(), 1);
+        assert!(recovered.notices[0].title.starts_with("Resolved:"));
+        s.ts_ms = 80_000;
+        assert!(run(&conn, &s).unwrap().notices.is_empty());
+    }
 
     fn conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -612,20 +859,38 @@ mod tests {
         assert_eq!(first.fired, 0);
         let second = run(
             &conn,
-            &sample(&metrics, &empty_logs, &empty_restarts, &empty_probes, 60_000),
+            &sample(
+                &metrics,
+                &empty_logs,
+                &empty_restarts,
+                &empty_probes,
+                60_000,
+            ),
         )
         .unwrap();
         assert_eq!(second.fired, 1);
         metrics.insert("cpu.percent".into(), 40.0);
         let cooling = run(
             &conn,
-            &sample(&metrics, &empty_logs, &empty_restarts, &empty_probes, 70_000),
+            &sample(
+                &metrics,
+                &empty_logs,
+                &empty_restarts,
+                &empty_probes,
+                70_000,
+            ),
         )
         .unwrap();
         assert_eq!(cooling.cleared, 0);
         let cleared = run(
             &conn,
-            &sample(&metrics, &empty_logs, &empty_restarts, &empty_probes, 100_000),
+            &sample(
+                &metrics,
+                &empty_logs,
+                &empty_restarts,
+                &empty_probes,
+                100_000,
+            ),
         )
         .unwrap();
         assert_eq!(cleared.cleared, 1);
@@ -654,7 +919,10 @@ mod tests {
         let first = run(&conn, &sample(&metrics, &logs, &restarts, &probes, 1_000)).unwrap();
         assert_eq!(first.fired, 1);
         let second = run(&conn, &sample(&metrics, &logs, &restarts, &probes, 2_000)).unwrap();
-        assert_eq!(second.fired, 0, "the same line must not raise the rate again");
+        assert_eq!(
+            second.fired, 0,
+            "the same line must not raise the rate again"
+        );
     }
 
     #[test]
@@ -710,7 +978,9 @@ mod tests {
             restarts: 3,
         }];
         run(&conn, &sample(&metrics, &[], &first, &probes, 1)).unwrap();
-        assert!(store::list_feed_between(&conn, "srv", 0, 10).unwrap().is_empty());
+        assert!(store::list_feed_between(&conn, "srv", 0, 10)
+            .unwrap()
+            .is_empty());
         let second = [RestartObs {
             id: "app".into(),
             name: "api".into(),
@@ -724,20 +994,26 @@ mod tests {
     }
 
     #[test]
-    fn existing_alert_events_join_one_incident() {
+    fn unrelated_alert_events_have_separate_incidents() {
         let conn = conn();
         migrate_rules(&conn).unwrap();
         AlertHistoryStore::migrate(&conn).unwrap();
-        AlertHistoryStore::insert_firing(&conn, "r", "CPU", "srv", None, "cpu hot", 95.0, 90.0, 1_000).unwrap();
-        AlertHistoryStore::insert_firing(&conn, "r2", "Disk", "srv", None, "disk hot", 91.0, 85.0, 2_000).unwrap();
+        AlertHistoryStore::insert_firing(
+            &conn, "r", "CPU", "srv", None, "cpu hot", 95.0, 90.0, 1_000,
+        )
+        .unwrap();
+        AlertHistoryStore::insert_firing(
+            &conn, "r2", "Disk", "srv", None, "disk hot", 91.0, 85.0, 2_000,
+        )
+        .unwrap();
         let metrics = HashMap::new();
         let probes = HashMap::new();
         run(&conn, &sample(&metrics, &[], &[], &probes, 3_000)).unwrap();
         run(&conn, &sample(&metrics, &[], &[], &probes, 4_000)).unwrap();
         let incidents = store::list_incidents(&conn, Some("srv")).unwrap();
-        assert_eq!(incidents.len(), 1);
+        assert_eq!(incidents.len(), 2);
         let timeline = store::list_timeline(&conn, &incidents[0].id).unwrap();
-        assert_eq!(timeline.len(), 2);
+        assert!(timeline.len() >= 4);
     }
 
     #[test]
@@ -747,11 +1023,7 @@ mod tests {
         let mut metrics = HashMap::new();
         metrics.insert("cpu.percent".into(), 10.0);
         for i in 0..10 {
-            run(
-                &conn,
-                &sample(&metrics, &[], &[], &probes, i * 60_000),
-            )
-            .unwrap();
+            run(&conn, &sample(&metrics, &[], &[], &probes, i * 60_000)).unwrap();
         }
         metrics.insert("cpu.percent".into(), 90.0);
         run(&conn, &sample(&metrics, &[], &[], &probes, 700_000)).unwrap();
@@ -822,7 +1094,9 @@ mod tests {
                 restarts: count,
                 version: String::new(),
             }];
-            fired += run(&conn, &sample_apps(&metrics, &apps, &probes, ts)).unwrap().fired;
+            fired += run(&conn, &sample_apps(&metrics, &apps, &probes, ts))
+                .unwrap()
+                .fired;
         }
         assert_eq!(fired, 1);
     }

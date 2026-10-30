@@ -5,6 +5,7 @@
 
 pub(crate) mod checks;
 pub(crate) mod cycle;
+pub(crate) mod incidents;
 pub(crate) mod logic;
 pub(crate) mod notify;
 pub(crate) mod policy;
@@ -21,12 +22,30 @@ use notify::{build_jobs, deliver_job, Job};
 use parking_lot::Mutex;
 use report::digest_message;
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 pub use store::migrate;
+static PRIVATE_NOTICES: AtomicBool = AtomicBool::new(true);
+
+fn queue_notice(app: &AppHandle, channels: &[types::Channel], notice: &cycle::Notice) {
+    let _ = app.emit(
+        "intel-notice",
+        serde_json::json!({ "title": notice.title, "body": notice.body, "path": notice.path }),
+    );
+    let (mut jobs, _) = build_jobs(channels, &notice.title, &notice.body, &notice.path);
+    // One desktop notification regardless of the number of configured channels.
+    jobs.retain(|job| !matches!(job, Job::Windows { .. }));
+    jobs.push(Job::Windows {
+        title: notice.title.clone(),
+        body: notice.body.clone(),
+        path: notice.path.clone(),
+    });
+    enqueue(jobs);
+}
 
 fn outbox() -> &'static Mutex<VecDeque<Job>> {
     static OUTBOX: OnceLock<Mutex<VecDeque<Job>>> = OnceLock::new();
@@ -36,9 +55,6 @@ fn outbox() -> &'static Mutex<VecDeque<Job>> {
 fn enqueue(jobs: Vec<Job>) {
     let mut queue = outbox().lock();
     for job in jobs {
-        if queue.len() >= 50 {
-            queue.pop_front();
-        }
         queue.push_back(job);
     }
 }
@@ -50,7 +66,12 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-pub fn on_live_sample(app: &AppHandle, server_id: &str, connected: bool, metrics: &HashMap<String, f64>) {
+pub fn on_live_sample(
+    app: &AppHandle,
+    server_id: &str,
+    connected: bool,
+    metrics: &HashMap<String, f64>,
+) {
     if let Err(err) = live_sample(app, server_id, connected, metrics) {
         eprintln!("intel sample: {err}");
     }
@@ -70,6 +91,17 @@ fn live_sample(
         .map(|server| server.name.clone())
         .unwrap_or_else(|_| server_id.to_string());
     let mut metrics = metrics.clone();
+    if !connected {
+        let host = state
+            .config
+            .lock()
+            .get_server(server_id)
+            .map(|server| server.host.clone())
+            .unwrap_or_default();
+        if let Ok(up) = checks::probe_ping(&host) {
+            metrics.insert("server.ping_up".into(), if up { 1.0 } else { 0.0 });
+        }
+    }
     if let Some(web) = state.event_hub.last_web_snapshot(server_id) {
         metrics
             .entry("web.req_per_sec".into())
@@ -100,7 +132,7 @@ fn live_sample(
             .iter()
             .any(|rule| rule.enabled && matches!(rule.kind.as_str(), "log_pattern" | "new_error"))
     };
-    let logs = if want_logs {
+    let logs = if want_logs || connected {
         recent_logs(&state, server_id)
     } else {
         Vec::new()
@@ -139,11 +171,7 @@ fn live_sample(
     }
     let channels = channels_with_secrets(&state)?;
     for notice in notices {
-        let (jobs, errors) = build_jobs(&channels, &notice.title, &notice.body, &notice.path);
-        for err in errors {
-            eprintln!("intel channel: {err}");
-        }
-        enqueue(jobs);
+        queue_notice(app, &channels, &notice);
     }
     Ok(())
 }
@@ -268,12 +296,22 @@ fn enrich_infra(app: &AppHandle, server_id: &str, metrics: &mut HashMap<String, 
     if let Some(up) = infra.uptime_ok(server_id) {
         metrics.insert("health.up".into(), if up { 1.0 } else { 0.0 });
     }
+    for collector in ["certificates", "certificates_pc"] {
+        if let Some(days) = infra.minimum_number(server_id, collector, "daysRemaining") {
+            let previous = metrics.get("ssl.days_remaining").copied().unwrap_or(days);
+            metrics.insert("ssl.days_remaining".into(), previous.min(days));
+        }
+    }
 }
 
 fn auth_signals(app: &AppHandle, server_id: &str) -> (Option<u64>, Option<Vec<String>>) {
     let infra = app.state::<crate::infra::InfraState>();
     let fails = if infra.has_collector(server_id, "ssh_security") {
-        Some(infra.maximum_number(server_id, "ssh_security", "attempts").unwrap_or(0.0) as u64)
+        Some(
+            infra
+                .maximum_number(server_id, "ssh_security", "attempts")
+                .unwrap_or(0.0) as u64,
+        )
     } else {
         None
     };
@@ -298,7 +336,11 @@ fn fold_app_metrics(metrics: &mut HashMap<String, f64>, apps: &[TracelynApp]) {
             continue;
         };
         if let Some(value) = err {
-            error_rate = Some(error_rate.map(|current| current.max(*value)).unwrap_or(*value));
+            error_rate = Some(
+                error_rate
+                    .map(|current| current.max(*value))
+                    .unwrap_or(*value),
+            );
         }
         if let Some(value) = p95_ms {
             p95 = Some(p95.map(|current| current.max(*value)).unwrap_or(*value));
@@ -339,6 +381,9 @@ fn channels_with_secrets(state: &AppState) -> Result<Vec<types::Channel>, String
 }
 
 pub fn spawn_scheduler(app: AppHandle) {
+    app.listen("privacy-mode", |event| {
+        PRIVATE_NOTICES.store(event.payload() != "false", Ordering::SeqCst);
+    });
     tauri::async_runtime::spawn(async move {
         let mut ticks: u32 = 0;
         loop {
@@ -362,7 +407,9 @@ pub fn spawn_scheduler(app: AppHandle) {
 fn flush_outbox(app: &AppHandle) {
     let jobs: Vec<Job> = outbox().lock().drain(..).collect();
     for job in jobs {
-        if let Err(err) = deliver_job(&job, &mut |title, body, path| show_notification(app, title, body, path)) {
+        if let Err(err) = deliver_job(&job, &mut |title, body, path| {
+            show_notification(app, title, body, path)
+        }) {
             eprintln!("intel deliver: {err}");
         }
     }
@@ -371,7 +418,9 @@ fn flush_outbox(app: &AppHandle) {
 pub fn deliver_now(app: &AppHandle, jobs: &[Job]) -> Vec<String> {
     let mut errors = Vec::new();
     for job in jobs {
-        if let Err(err) = deliver_job(job, &mut |title, body, path| show_notification(app, title, body, path)) {
+        if let Err(err) = deliver_job(job, &mut |title, body, path| {
+            show_notification(app, title, body, path)
+        }) {
             errors.push(err);
         }
     }
@@ -379,17 +428,15 @@ pub fn deliver_now(app: &AppHandle, jobs: &[Job]) -> Vec<String> {
 }
 
 fn show_notification(app: &AppHandle, title: &str, body: &str, path: &str) -> Result<(), String> {
+    let private = PRIVATE_NOTICES.load(Ordering::SeqCst);
+    let (title, body) = incidents::notification_text(private, title, body);
     app.notification()
         .builder()
-        .title(title)
-        .body(body)
+        .title(&title)
+        .body(&body)
         .extra("path", path)
         .show()
         .map_err(|err| err.to_string())?;
-    let _ = app.emit(
-        "intel-notice",
-        serde_json::json!({ "title": title, "body": body, "path": path }),
-    );
     Ok(())
 }
 
@@ -415,9 +462,14 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
                 rule.enabled
                     && matches!(rule.kind.as_str(), "ssl_expiry" | "uptime" | "app_down")
                     && (rule.kind != "app_down" || !rule.params.host.is_empty())
-                    && rule.server_id.as_ref().map(|id| id == server_id).unwrap_or(true)
+                    && rule
+                        .server_id
+                        .as_ref()
+                        .map(|id| id == server_id)
+                        .unwrap_or(true)
             }) {
-                let runtime = store::load_state(db.connection(), &rule.id, server_id).map_err(|e| e.to_string())?;
+                let runtime = store::load_state(db.connection(), &rule.id, server_id)
+                    .map_err(|e| e.to_string())?;
                 if now.saturating_sub(runtime.checked_at_ms) < 300_000 {
                     continue;
                 }
@@ -473,8 +525,7 @@ fn maintenance(app: &AppHandle) -> Result<(), String> {
                 if !out.notices.is_empty() {
                     let channels = channels_with_secrets(&state)?;
                     for notice in out.notices {
-                        let (jobs, _) = build_jobs(&channels, &notice.title, &notice.body, &notice.path);
-                        enqueue(jobs);
+                        queue_notice(app, &channels, &notice);
                     }
                 }
             }
@@ -532,8 +583,10 @@ fn send_due_digests(app: &AppHandle, state: &AppState, now: i64) -> Result<(), S
             } else {
                 now - 86_400_000
             };
-            let incidents = store::incidents_since(db.connection(), since).map_err(|e| e.to_string())?;
-            let (_, anomaly_count) = store::incident_counts(db.connection(), since).map_err(|e| e.to_string())?;
+            let incidents =
+                store::incidents_since(db.connection(), since).map_err(|e| e.to_string())?;
+            let (_, anomaly_count) =
+                store::incident_counts(db.connection(), since).map_err(|e| e.to_string())?;
             let (subject, body) = digest_message(&digest, &incidents, anomaly_count, since);
             let channel = store::list_channels(db.connection())
                 .map_err(|e| e.to_string())?

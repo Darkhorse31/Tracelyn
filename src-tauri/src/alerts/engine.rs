@@ -16,6 +16,7 @@ pub enum EngineError {
 #[derive(Debug, Clone)]
 pub struct EvaluationInput {
     pub server_id: String,
+    pub server_name: String,
     pub ts_ms: i64,
     pub metrics: HashMap<String, f64>,
     pub connected: bool,
@@ -46,14 +47,19 @@ pub struct EvaluationOutcome {
 pub struct AlertEngine;
 
 impl AlertEngine {
-    pub fn evaluate(conn: &Connection, input: &EvaluationInput) -> Result<EvaluationOutcome, EngineError> {
+    pub fn evaluate(
+        conn: &Connection,
+        input: &EvaluationInput,
+    ) -> Result<EvaluationOutcome, EngineError> {
         let rules = list_rules(conn).map_err(|e| match e {
             super::rules::RuleError::Sqlite(err) => EngineError::Sqlite(err),
         })?;
         let mut transitions = Vec::new();
 
         for rule in rules {
-            if crate::companion_history::owns_basic(&input.server_id,&rule) {continue;}
+            if crate::companion_history::owns_basic(&input.server_id, &rule) {
+                continue;
+            }
             if !rule.enabled {
                 continue;
             }
@@ -76,7 +82,12 @@ impl AlertEngine {
                 state.condition_since_ms = None;
             }
             let new_state = if signal.no_data {
-                advance_no_data(state, input.ts_ms, rule.params.duration_secs, rule.params.alert_on_no_data)
+                advance_no_data(
+                    state,
+                    input.ts_ms,
+                    rule.params.duration_secs,
+                    rule.params.alert_on_no_data,
+                )
             } else {
                 advance_state(
                     state,
@@ -97,8 +108,8 @@ impl AlertEngine {
                     .last_notify_ms
                     .map(|notified| notified < episode_since)
                     .unwrap_or(true);
-            if needs_notify && allow_notify(&rule, input, notified_at) {
-                let message = if signal.no_data {
+            if needs_notify {
+                let detail = if signal.no_data {
                     format!(
                         "No data for {}",
                         signal.metric_key.as_deref().unwrap_or("metric")
@@ -106,19 +117,30 @@ impl AlertEngine {
                 } else {
                     format_alert_message(&rule, signal.value, signal.metric_key.as_deref())
                 };
+                let message = format!(
+                    "{}: {}. Since {}",
+                    input.server_name.replace(';', ","),
+                    detail.replace(';', ","),
+                    chrono::DateTime::from_timestamp_millis(episode_since)
+                        .map(|v| v.to_rfc3339())
+                        .unwrap_or_else(|| episode_since.to_string())
+                );
                 let fired_at = episode_since;
-                AlertHistoryStore::insert_firing(
-                    conn,
-                    &rule.id,
-                    &rule.name,
-                    &input.server_id,
-                    signal.metric_key.as_deref(),
-                    &message,
-                    signal.value,
-                    rule.params.threshold,
-                    fired_at,
-                )
-                .map_err(history_err)?;
+                let recorded: i64 = conn.query_row("SELECT COUNT(*) FROM alert_events WHERE rule_id=?1 AND server_id=?2 AND fired_at_ms=?3", params![rule.id,input.server_id,fired_at], |r|r.get(0))?;
+                if recorded == 0 {
+                    AlertHistoryStore::insert_firing(
+                        conn,
+                        &rule.id,
+                        &rule.name,
+                        &input.server_id,
+                        signal.metric_key.as_deref(),
+                        &message,
+                        signal.value,
+                        rule.params.threshold,
+                        fired_at,
+                    )
+                    .map_err(history_err)?;
+                }
                 let _ = AlertHistoryStore::record_marker(
                     conn,
                     &input.server_id,
@@ -127,16 +149,18 @@ impl AlertEngine {
                     &rule.name,
                     &message,
                 );
-                new_state.last_notify_ms = Some(input.ts_ms);
-                transitions.push(AlertTransition {
-                    rule_id: rule.id.clone(),
-                    rule_name: rule.name.clone(),
-                    server_id: input.server_id.clone(),
-                    fired: true,
-                    message,
-                    value: signal.value,
-                    threshold: rule.params.threshold,
-                });
+                if allow_notify(&rule, input, notified_at) {
+                    new_state.last_notify_ms = Some(input.ts_ms);
+                    transitions.push(AlertTransition {
+                        rule_id: rule.id.clone(),
+                        rule_name: rule.name.clone(),
+                        server_id: input.server_id.clone(),
+                        fired: true,
+                        message,
+                        value: signal.value,
+                        threshold: rule.params.threshold,
+                    });
+                }
             } else if !new_state.firing && was_firing {
                 AlertHistoryStore::resolve_open(conn, &rule.id, &input.server_id, input.ts_ms)
                     .map_err(history_err)?;
@@ -230,7 +254,12 @@ fn save_state(
     Ok(())
 }
 
-fn advance_no_data(prev: RuleState, ts_ms: i64, duration_secs: u64, alert_on_no_data: bool) -> RuleState {
+fn advance_no_data(
+    prev: RuleState,
+    ts_ms: i64,
+    duration_secs: u64,
+    alert_on_no_data: bool,
+) -> RuleState {
     let duration_ms = duration_secs as i64 * 1000;
     let mut next = prev;
     let since = if next.no_data || next.firing {
@@ -269,7 +298,11 @@ fn allow_notify(rule: &AlertRule, input: &EvaluationInput, last_notify_ms: Optio
             return false;
         }
     }
-    cooldown_elapsed(last_notify_ms, input.ts_ms, rule.params.cooldown_secs as i64 * 1000)
+    cooldown_elapsed(
+        last_notify_ms,
+        input.ts_ms,
+        rule.params.cooldown_secs as i64 * 1000,
+    )
 }
 
 fn advance_state(
@@ -319,7 +352,10 @@ fn rule_signal(rule: &AlertRule, input: &EvaluationInput) -> Signal {
     if !rule.params.conditions.is_empty()
         && !matches!(
             rule.kind,
-            RuleKind::ServerUnreachable | RuleKind::LogQuery | RuleKind::TraceP95 | RuleKind::TraceErrorRate
+            RuleKind::ServerUnreachable
+                | RuleKind::LogQuery
+                | RuleKind::TraceP95
+                | RuleKind::TraceErrorRate
         )
     {
         return multi_signal(rule, input);
@@ -365,7 +401,11 @@ fn trace_key(rule: &AlertRule, field: &str, fallback: &str) -> String {
         .endpoint
         .as_deref()
         .filter(|value| !value.is_empty())
-        .or(rule.params.metric_key.as_deref().filter(|value| !value.is_empty()));
+        .or(rule
+            .params
+            .metric_key
+            .as_deref()
+            .filter(|value| !value.is_empty()));
     match endpoint {
         Some(endpoint) => format!("trace.{endpoint}.{field}"),
         None => fallback.into(),
@@ -464,7 +504,7 @@ fn compare(op: &str, value: f64, threshold: f64) -> bool {
 
 fn format_alert_message(rule: &AlertRule, value: f64, metric_key: Option<&str>) -> String {
     match rule.kind {
-        RuleKind::ServerUnreachable => format!("Server has been unreachable for over {}s", rule.params.duration_secs),
+        RuleKind::ServerUnreachable => format!("The server connection has been unavailable for over {} seconds. Check the server and its network", rule.params.duration_secs),
         RuleKind::LogQuery => format!(
             "Log query matched {:.0} lines in {}s (threshold {:.0})",
             value,
@@ -528,6 +568,7 @@ mod tests {
 
         let input = EvaluationInput {
             server_id: "srv-1".into(),
+            server_name: "Production".into(),
             ts_ms: base,
             metrics: metrics.clone(),
             connected: true,
@@ -540,6 +581,7 @@ mod tests {
 
         let input2 = EvaluationInput {
             server_id: "srv-1".into(),
+            server_name: "Production".into(),
             ts_ms: base + 301_000,
             metrics,
             connected: true,
@@ -570,6 +612,7 @@ mod tests {
             &conn,
             &EvaluationInput {
                 server_id: "srv-1".into(),
+                server_name: "Production".into(),
                 ts_ms: base,
                 metrics: metrics.clone(),
                 connected: true,
@@ -585,6 +628,7 @@ mod tests {
             &conn,
             &EvaluationInput {
                 server_id: "srv-1".into(),
+                server_name: "Production".into(),
                 ts_ms: base + 5_000,
                 metrics: metrics.clone(),
                 connected: true,
@@ -599,6 +643,7 @@ mod tests {
             &conn,
             &EvaluationInput {
                 server_id: "srv-1".into(),
+                server_name: "Production".into(),
                 ts_ms: base + 40_000,
                 metrics,
                 connected: true,
@@ -620,6 +665,35 @@ mod tests {
         conn
     }
 
+    #[test]
+    fn unreachable_message_names_the_server_and_records_only_one_episode() {
+        let conn = bare();
+        put(
+            &conn,
+            RuleKind::ServerUnreachable,
+            RuleParams {
+                threshold: 1.0,
+                ..RuleParams::default()
+            },
+        );
+        let mut input = at(1000, HashMap::new(), vec![], false);
+        input.connected = false;
+        let first = AlertEngine::evaluate(&conn, &input).unwrap();
+        assert_eq!(first.transitions.len(), 1);
+        assert!(first.transitions[0].message.contains("Production"));
+        assert!(first.transitions[0].message.contains("Since"));
+        assert!(!first.transitions[0].message.contains(';'));
+        input.ts_ms = 2000;
+        assert!(AlertEngine::evaluate(&conn, &input)
+            .unwrap()
+            .transitions
+            .is_empty());
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM alert_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
     fn put(conn: &Connection, kind: RuleKind, params: RuleParams) {
         upsert_rule(
             conn,
@@ -639,9 +713,15 @@ mod tests {
         .unwrap();
     }
 
-    fn at(ts: i64, metrics: HashMap<String, f64>, logs: Vec<LogSample>, logs_available: bool) -> EvaluationInput {
+    fn at(
+        ts: i64,
+        metrics: HashMap<String, f64>,
+        logs: Vec<LogSample>,
+        logs_available: bool,
+    ) -> EvaluationInput {
         EvaluationInput {
             server_id: "srv-1".into(),
+            server_name: "Production".into(),
             ts_ms: ts,
             metrics,
             connected: true,
@@ -680,7 +760,8 @@ mod tests {
         );
         let mut metrics = HashMap::new();
         metrics.insert("cpu.percent".into(), 90.0);
-        let missing = AlertEngine::evaluate(&conn, &at(1_000, metrics.clone(), vec![], false)).unwrap();
+        let missing =
+            AlertEngine::evaluate(&conn, &at(1_000, metrics.clone(), vec![], false)).unwrap();
         assert!(missing.transitions.is_empty());
         assert!(list_rules(&conn).unwrap()[0].no_data);
         metrics.insert("memory.percent".into(), 75.0);
@@ -702,7 +783,10 @@ mod tests {
             },
         );
         let out = AlertEngine::evaluate(&conn, &at(1_000, HashMap::new(), vec![], false)).unwrap();
-        assert!(out.transitions.iter().any(|t| t.fired && t.message.contains("No data")));
+        assert!(out
+            .transitions
+            .iter()
+            .any(|t| t.fired && t.message.contains("No data")));
     }
 
     #[test]
@@ -722,15 +806,20 @@ mod tests {
         let mut hot = HashMap::new();
         hot.insert("cpu.percent".into(), 90.0);
         assert_eq!(
-            AlertEngine::evaluate(&conn, &at(0, hot.clone(), vec![], false)).unwrap().transitions.len(),
+            AlertEngine::evaluate(&conn, &at(0, hot.clone(), vec![], false))
+                .unwrap()
+                .transitions
+                .len(),
             1
         );
         hot.insert("cpu.percent".into(), 1.0);
         AlertEngine::evaluate(&conn, &at(5_000, hot.clone(), vec![], false)).unwrap();
-        let cleared = AlertEngine::evaluate(&conn, &at(40_000, hot.clone(), vec![], false)).unwrap();
+        let cleared =
+            AlertEngine::evaluate(&conn, &at(40_000, hot.clone(), vec![], false)).unwrap();
         assert!(cleared.transitions.iter().any(|t| !t.fired));
         hot.insert("cpu.percent".into(), 90.0);
-        let blocked = AlertEngine::evaluate(&conn, &at(50_000, hot.clone(), vec![], false)).unwrap();
+        let blocked =
+            AlertEngine::evaluate(&conn, &at(50_000, hot.clone(), vec![], false)).unwrap();
         assert!(blocked.transitions.iter().all(|t| !t.fired));
 
         reset(&conn);
@@ -774,7 +863,10 @@ mod tests {
             ts_ms: 5_000,
         }];
         let logged = AlertEngine::evaluate(&conn, &at(5_000, HashMap::new(), logs, true)).unwrap();
-        assert!(logged.transitions.iter().any(|t| t.message.contains("Log query")));
+        assert!(logged
+            .transitions
+            .iter()
+            .any(|t| t.message.contains("Log query")));
 
         reset(&conn);
         put(
@@ -789,6 +881,9 @@ mod tests {
         let mut traces = HashMap::new();
         traces.insert("trace.GET /pay.error_rate".into(), 12.0);
         let trace = AlertEngine::evaluate(&conn, &at(6_000, traces, vec![], false)).unwrap();
-        assert!(trace.transitions.iter().any(|t| t.fired && t.message.contains("error rate")));
+        assert!(trace
+            .transitions
+            .iter()
+            .any(|t| t.fired && t.message.contains("error rate")));
     }
 }

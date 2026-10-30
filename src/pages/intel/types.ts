@@ -88,6 +88,7 @@ export interface ChannelWrite {
 }
 
 export interface Incident {
+  kind: string;
   id: string;
   serverId: string;
   title: string;

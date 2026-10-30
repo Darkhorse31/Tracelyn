@@ -67,6 +67,14 @@
   --space-4: 16px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --text-caption: 0.75rem;
+  --text-body: 0.875rem;
+  --text-heading: 1.5rem;
+  --text-stat: 2rem;
+  --elevation-card: 0 1px 3px rgb(15 23 42 / 0.06);
+  --elevation-overlay: 0 8px 32px rgb(15 23 42 / 0.16);
   --control-height: 32px;
   --radius: 0.5rem;
   --background: oklch(0.985 0.003 255);

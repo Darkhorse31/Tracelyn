@@ -50,27 +50,33 @@ import {
 } from "@/components/status/connection-status-badge";
 import { useServersContext } from "@/contexts/servers-context";
 import { cn } from "cn";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { listIncidents } from "@/pages/intel/api";
+import { usePrivacy } from "@/contexts/privacy-context";
 import markLight from "@/assets/tracelyn-mark.png";
 import markDark from "@/assets/tracelyn-mark-dark.png";
 
 const NAV = [
-  { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
   { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/servers", label: "All servers", icon: Server },
-  { to: "/server", label: "Server", icon: Activity },
-  { to: "/processes", label: "Processes", icon: Cpu },
-  { to: "/apps", label: "Applications", icon: Boxes },
+  { to: "/incidents", label: "Incidents", icon: AlertTriangle },
+  { to: "/servers", label: "Servers", icon: Server },
+  { to: "/apps", label: "Apps", icon: Boxes },
+  { to: "/web", label: "Traffic", icon: BarChart3 },
   { to: "/logs", label: "Logs", icon: ScrollText },
-  { to: "/web", label: "Web traffic", icon: BarChart3 },
-  { to: "/apm", label: "API endpoints", icon: Route },
   { to: "/traces", label: "Traces", icon: Waypoints },
+  { to: "/infra/databases", label: "Databases", icon: Database },
+  { to: "/settings", label: "Settings", icon: Settings },
+] as const;
+const DETAIL_NAV = [
+  { to: "/dashboards", label: "Dashboards", icon: LayoutDashboard },
+  { to: "/server", label: "Server metrics", icon: Activity },
+  { to: "/processes", label: "Processes", icon: Cpu },
+  { to: "/apm", label: "Request performance", icon: Route },
   { to: "/map", label: "Service map", icon: Share2 },
   { to: "/errors", label: "Errors", icon: Bug },
-  { to: "/slow-queries", label: "Slow queries", icon: Timer },
+  { to: "/slow-queries", label: "Slow database queries", icon: Timer },
   { to: "/redis", label: "Redis", icon: Database },
-  { to: "/alerts", label: "Alerts", icon: AlertTriangle },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/alerts", label: "Alert rules", icon: AlertTriangle },
 ] as const;
 
 const INFRA_NAV = [
@@ -96,6 +102,9 @@ const ACTIVE_ITEM =
 export function AppSidebar() {
   const { servers, statusById, selectedServerId, setSelectedServerId } =
     useServersContext();
+  const { enabled, mask } = usePrivacy();
+  const [incidentCount, setIncidentCount] = useState(0);
+  useEffect(() => { const refresh = () => { void listIncidents().then(rows => setIncidentCount(rows.filter(r => r.status !== "resolved").length)).catch(() => undefined); }; refresh(); const t = setInterval(refresh, 5000); return () => clearInterval(t); }, []);
   const [addOpen, setAddOpen] = useState(false);
   const selectedStatus = selectedServerId
     ? statusById.get(selectedServerId)
@@ -112,7 +121,7 @@ export function AppSidebar() {
             </div>
             <div className="flex flex-col group-data-[collapsible=icon]:hidden">
               <span className="text-sm font-semibold tracking-tight">Tracelyn</span>
-              <span className="text-xs text-muted-foreground">SSH monitoring</span>
+              <span className="text-xs text-muted-foreground">Server monitoring</span>
             </div>
           </div>
         </SidebarHeader>
@@ -135,7 +144,7 @@ export function AppSidebar() {
                         tooltip={item.label}
                       >
                         <item.icon aria-hidden />
-                        <span>{item.label}</span>
+                        <span>{item.label}</span>{item.to === "/incidents" && incidentCount > 0 && <span className="ml-auto rounded bg-status-critical px-2 text-xs text-status-critical-foreground">{incidentCount}</span>}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -143,6 +152,7 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
           </nav>
+          <nav aria-label="Explore details"><SidebarGroup><SidebarGroupLabel>Explore details</SidebarGroupLabel><SidebarGroupContent><SidebarMenu>{DETAIL_NAV.map(item => <SidebarMenuItem key={item.to}><SidebarMenuButton render={<NavLink to={item.to} className={({isActive}) => cn(isActive && ACTIVE_ITEM)} />} tooltip={item.label}><item.icon aria-hidden /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu></SidebarGroupContent></SidebarGroup></nav>
           <nav aria-label="Infrastructure">
             <SidebarGroup>
               <SidebarGroupLabel>Infrastructure</SidebarGroupLabel>
@@ -239,7 +249,7 @@ export function AppSidebar() {
                           isActive={selected}
                           aria-current={selected ? "true" : undefined}
                           onClick={() => setSelectedServerId(server.id)}
-                          tooltip={`${server.name} — ${statusLabel}`}
+                          tooltip={`${enabled ? "Monitored server" : mask(server.name)} — ${statusLabel}`}
                           className={cn(selected && ACTIVE_ITEM)}
                         >
                           <ConnectionStatusIcon status={status} />

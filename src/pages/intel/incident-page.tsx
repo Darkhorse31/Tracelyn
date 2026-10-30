@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Section } from "@/components/layout/enterprise";
 import { formatTs, SeverityBadge, statusLabel } from "@/components/intel/format";
 import { useLicense } from "@/contexts/license-context";
 import { usePrivacy } from "@/contexts/privacy-context";
@@ -23,7 +24,11 @@ import {
 import type { IncidentDetail } from "@/pages/intel/types";
 
 const KIND_LABEL: Record<string, string> = {
-  alert: "Alert",
+  alert: "What failed",
+  cause: "Likely cause",
+  next_step: "What to do",
+  metrics: "Last known measurements",
+  resolved: "Recovered",
   deploy: "Deploy",
   anomaly: "Anomaly",
   audit: "Audit",
@@ -38,11 +43,13 @@ export function IncidentPage() {
   const { incidentId } = useParams();
   const { servers } = useServersContext();
   const { license } = useLicense();
-  const { mask } = usePrivacy();
+  const { mask, enabled } = usePrivacy();
   const canWrite = Boolean(license?.canWrite);
   const [detail, setDetail] = useState<IncidentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => {setNow(Date.now()); load();}, 5000); return () => clearInterval(t); }, [incidentId]);
   const [busy, setBusy] = useState(false);
 
   const load = () => {
@@ -67,7 +74,7 @@ export function IncidentPage() {
       await work();
       load();
     } catch (err) {
-      toast.error(String(err));
+      toast.error("The action could not be completed. Try again.");
     } finally {
       setBusy(false);
     }
@@ -75,12 +82,12 @@ export function IncidentPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link to="/intel?tab=incidents" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+      <Link to="/incidents" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
         Back to incidents
       </Link>
       {error && (
         <Notice tone="critical" title="Could not open this incident">
-          {error}
+          Check your connection and try again.
         </Notice>
       )}
       {!detail && !error && <Skeleton className="h-40 w-full" />}
@@ -88,11 +95,11 @@ export function IncidentPage() {
         <>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-xl font-semibold tracking-tight">{detail.incident.title}</h2>
+              <h2 className="text-xl font-semibold tracking-tight">{enabled ? "Incident details" : mask(detail.incident.title)}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                 <SeverityBadge severity={detail.incident.severity} />
                 <span>{statusLabel(detail.incident.status)}</span>
-                <span>{mask(serverName ?? detail.incident.serverId)}</span>
+                <span>{enabled ? "Monitored server" : mask(serverName ?? detail.incident.serverId)}</span>
                 <span className="font-mono text-xs">Opened {formatTs(detail.incident.openedAtMs)}</span>
               </div>
             </div>
@@ -170,6 +177,8 @@ export function IncidentPage() {
               </Button>
             </div>
           </div>
+          <div className="grid gap-4 sm:grid-cols-3 text-sm"><p>Started<br /><strong>{formatTs(detail.incident.openedAtMs)}</strong></p><p>Duration<br /><strong>{Math.max(0, Math.floor(((detail.incident.resolvedAtMs ?? now) - detail.incident.openedAtMs) / 1000))} seconds</strong></p><p>Resolved<br /><strong>{detail.incident.resolvedAtMs ? formatTs(detail.incident.resolvedAtMs) : "Still active"}</strong></p></div>
+          <div className="grid gap-4 lg:grid-cols-2">{([['cause', 'Likely cause'], ['next_step', 'What to do']] as const).map(([kind,title]) => <Section key={kind} title={title}><p className="text-sm">{enabled ? "Details hidden in privacy mode" : mask(detail.timeline.find(e=>e.kind===kind)?.message ?? "Review the timeline and related logs. The cause has not been confirmed.").replaceAll(";", ",")}</p></Section>)}</div>
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Timeline</CardTitle>
@@ -189,7 +198,7 @@ export function IncidentPage() {
                         <span className="font-medium">{KIND_LABEL[entry.kind] ?? entry.kind}</span>
                         <span className="ml-2 font-mono text-xs text-muted-foreground">{formatTs(entry.tsMs)}</span>
                       </p>
-                      <p className="text-muted-foreground">{mask(entry.message)}</p>
+                      <p className="text-muted-foreground">{enabled ? "Incident details are hidden in privacy mode" : mask(entry.message).replaceAll(";", ",")}</p>
                     </li>
                   ))}
                 </ol>
