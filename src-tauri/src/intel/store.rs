@@ -161,6 +161,7 @@ pub fn migrate(conn: &Connection) -> Result<(), IntelError> {
         );
         ",
     )?;
+    let _ = conn.execute("ALTER TABLE intel_incidents ADD COLUMN kind TEXT NOT NULL DEFAULT 'unknown'", []);
     let _ = conn.execute("ALTER TABLE intel_incidents ADD COLUMN snooze_until_ms INTEGER", []);
     let _ = conn.execute(
         "ALTER TABLE intel_incidents ADD COLUMN unread INTEGER NOT NULL DEFAULT 1",
@@ -170,6 +171,7 @@ pub fn migrate(conn: &Connection) -> Result<(), IntelError> {
         "ALTER TABLE intel_rule_state ADD COLUMN last_notify_ms INTEGER",
         [],
     );
+    super::incidents::migrate(conn)?;
     Ok(())
 }
 
@@ -364,11 +366,11 @@ pub fn delete_channel(conn: &Connection, id: &str) -> Result<(), IntelError> {
 
 pub fn list_incidents(conn: &Connection, server_id: Option<&str>) -> Result<Vec<Incident>, IntelError> {
     let mut stmt = conn.prepare(
-        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
+        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread, kind
          FROM intel_incidents
          WHERE (?1 IS NULL OR server_id = ?1)
          ORDER BY updated_at_ms DESC
-         LIMIT 100",
+         ",
     )?;
     let rows = stmt.query_map(params![server_id], incident_row)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(IntelError::from)
@@ -376,6 +378,7 @@ pub fn list_incidents(conn: &Connection, server_id: Option<&str>) -> Result<Vec<
 
 fn incident_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Incident> {
     Ok(Incident {
+        kind: row.get(11)?,
         id: row.get(0)?,
         server_id: row.get(1)?,
         title: row.get(2)?,
@@ -393,7 +396,7 @@ fn incident_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Incident> {
 pub fn get_incident(conn: &Connection, id: &str) -> Result<Option<Incident>, IntelError> {
     let row = conn
         .query_row(
-            "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
+            "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread, kind
              FROM intel_incidents WHERE id = ?1",
             params![id],
             incident_row,
@@ -726,7 +729,7 @@ pub fn recent_open_alerts(
     let mut stmt = conn.prepare(
         "SELECT id, rule_name, message, fired_at_ms FROM alert_events
          WHERE server_id = ?1 AND fired_at_ms >= ?2
-         ORDER BY fired_at_ms ASC LIMIT 50",
+         ORDER BY fired_at_ms ASC",
     )?;
     let rows = stmt.query_map(params![server_id, since_ms], |row| {
         Ok((
@@ -902,7 +905,7 @@ pub fn incident_counts(conn: &Connection, since_ms: i64) -> Result<(usize, usize
 
 pub fn incidents_since(conn: &Connection, since_ms: i64) -> Result<Vec<Incident>, IntelError> {
     let mut stmt = conn.prepare(
-        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread
+        "SELECT id, server_id, title, severity, status, opened_at_ms, updated_at_ms, acked_at_ms, resolved_at_ms, snooze_until_ms, unread, kind
          FROM intel_incidents
          WHERE opened_at_ms >= ?1 OR updated_at_ms >= ?1
          ORDER BY updated_at_ms DESC LIMIT 20",

@@ -141,6 +141,8 @@ pub struct Channel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Incident {
+    #[serde(default)]
+    pub kind: String,
     pub id: String,
     pub server_id: String,
     pub title: String,

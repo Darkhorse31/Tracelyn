@@ -20,7 +20,7 @@ export function PageHeader({
         {eyebrow ? (
           <p className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">{eyebrow}</p>
         ) : null}
-        <h2 className={cn("truncate text-xl font-semibold tracking-tight", mono && "font-mono")}>{title}</h2>
+        <h1 className={cn("text-2xl font-semibold tracking-tight", mono && "font-mono")}>{title}</h1>
         {description ? <div className="mt-2 text-sm text-muted-foreground">{description}</div> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

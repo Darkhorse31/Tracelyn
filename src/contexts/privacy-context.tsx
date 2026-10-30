@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from "lucide-react";
+import { emit } from "@tauri-apps/api/event";
 import {
   createContext,
   useCallback,
@@ -56,6 +57,10 @@ export function PrivacyProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(() => {
     setEnabled(!enabled);
   }, [enabled, setEnabled]);
+
+  useEffect(() => {
+    void emit("privacy-mode", enabled).catch(() => undefined);
+  }, [enabled]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

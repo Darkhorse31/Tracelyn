@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { CircleAlert, TriangleAlert, Info } from "lucide-react";
 
 export function formatTs(ms: number) {
   return new Date(ms).toLocaleString(undefined, {
@@ -12,7 +13,8 @@ export function formatTs(ms: number) {
 export function SeverityBadge({ severity }: { severity: string }) {
   const label = severity === "critical" ? "Critical" : severity === "warning" ? "Warning" : "Info";
   const variant = severity === "critical" ? "destructive" : severity === "warning" ? "outline" : "secondary";
-  return <Badge variant={variant}>{label}</Badge>;
+  const Icon = severity === "critical" ? CircleAlert : severity === "warning" ? TriangleAlert : Info;
+  return <Badge variant={variant}><Icon className="size-3" aria-hidden />{label}</Badge>;
 }
 
 export function statusLabel(status: string) {

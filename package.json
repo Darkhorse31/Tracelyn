@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts src/lib/license.test.ts src/lib/fleet-view.test.ts src/lib/log-view.test.ts src/lib/log-query.test.ts src/lib/log-groups.test.ts src/lib/chart-markers.test.ts src/lib/dashboards.test.ts",
+    "test": "node --test src/lib/privacy.test.ts src/lib/terminal-text.test.ts src/lib/collector-banner.test.ts src/lib/server-import.test.ts src/lib/license.test.ts src/lib/fleet-view.test.ts src/lib/log-view.test.ts src/lib/log-query.test.ts src/lib/log-groups.test.ts src/lib/chart-markers.test.ts src/lib/dashboards.test.ts src/lib/incident-health.test.ts src/lib/design-contrast.test.ts",
     "tauri": "tauri",
     "desktop:build": "node scripts/build-desktop.mjs",
     "tauri:release": "node scripts/build-desktop.mjs --release"

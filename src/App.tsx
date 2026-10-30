@@ -13,6 +13,7 @@ import { IncidentPage } from "@/pages/intel/incident-page";
 import { IntelPage } from "@/pages/intel/intel-page";
 import { LogsPage } from "@/pages/logs-page";
 import { OverviewPage } from "@/pages/overview-page";
+import { IncidentsPanel } from "@/components/intel/incidents-panel";
 import { AlertsPage } from "@/pages/alerts-page";
 import { ApmEndpointsPage } from "@/pages/apm-endpoints-page";
 import { RedisPage } from "@/pages/redis-page";
@@ -30,11 +31,10 @@ import { TracesPage } from "@/pages/traces-page";
 import { WebTrafficPage } from "@/pages/web-traffic-page";
 import { AllServersPage } from "@/pages/all-servers-page";
 import { WelcomePage } from "@/pages/welcome-page";
-import { useServersContext } from "@/contexts/servers-context";
+
 
 function HomePage() {
-  const { servers } = useServersContext();
-  return servers.length >= 2 ? <AllServersPage /> : <OverviewPage />;
+  return <OverviewPage />;
 }
 
 function App() {
@@ -64,6 +64,7 @@ function App() {
             {(Object.keys(SECTIONS) as Section[]).map((section) => (
               <Route key={section} path={`infra/${section}`} element={<InfraPage key={section} section={section} />} />
             ))}
+            <Route path="incidents" element={<IncidentsPanel />} />
             <Route path="alerts" element={<AlertsPage />} />
             <Route path="intel" element={<IntelPage />} />
             <Route path="intel/incidents/:incidentId" element={<IncidentPage />} />

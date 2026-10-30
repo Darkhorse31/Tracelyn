@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Masked } from "@/contexts/privacy-context";
+import { Masked, usePrivacy } from "@/contexts/privacy-context";
 import type {
   ConnectionStatus,
   OverviewServerMetrics,
@@ -75,6 +75,7 @@ export function ServerCard({
   onDisconnect,
   busy,
 }: ServerCardProps) {
+  const { enabled, mask } = usePrivacy();
   const connectionStatus = status?.status ?? "disconnected";
   const isConnected = connectionStatus === "connected";
   const showMetrics = isConnected && metrics;
@@ -82,7 +83,7 @@ export function ServerCard({
   return (
     <Card
       role="group"
-      aria-label={server.name}
+      aria-label={enabled ? "Monitored server" : mask(server.name)}
       className={cn(
         "flex flex-col transition-shadow duration-200",
         ringAccent(connectionStatus),
@@ -95,7 +96,7 @@ export function ServerCard({
               <Server className="size-4" aria-hidden />
             </div>
             <div className="min-w-0">
-              <CardTitle className="truncate text-base">{server.name}</CardTitle>
+              <CardTitle className="truncate text-base">{enabled ? "Monitored server" : mask(server.name)}</CardTitle>
               <CardDescription className="truncate font-mono text-xs">
                 <Masked text={`${server.username}@${server.host}:${server.port}`} />
               </CardDescription>
@@ -141,18 +142,18 @@ export function ServerCard({
           </div>
         ) : status?.osInfo ? (
           <p className="line-clamp-2 font-mono text-xs text-muted-foreground">
-            {status.osInfo}
+            {enabled ? "System details hidden" : mask(status.osInfo)}
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
             {connectionStatus === "offline" && status?.lastError
-              ? status.lastError
+              ? "We could not reach this server. Check its connection and hosting status."
               : "Connect to fetch system information and begin monitoring."}
           </p>
         )}
         {status?.hostname && !showMetrics && (
           <p className="font-mono text-xs text-muted-foreground">
-            Hostname: {status.hostname}
+            Hostname: {enabled ? "Hidden" : mask(status.hostname)}
           </p>
         )}
         {server.labels.length > 0 && (

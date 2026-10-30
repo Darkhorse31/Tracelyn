@@ -1,7 +1,6 @@
 import { LicenseBanner } from "@/components/account/account-license";
 import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
-import { AlertAnnouncer } from "@/components/alerts/alert-announcer";
 import { ErrorBoundary } from "@/components/status/error-boundary";
 import { HostKeyDialog } from "@/components/security/host-key-dialog";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -24,7 +23,8 @@ const TITLES: Record<string, string> = {
   "/web": "Web traffic",
   "/apm": "API endpoints",
   "/redis": "Redis",
-  "/alerts": "Alerts",
+  "/alerts": "Alert rules",
+  "/incidents": "Incidents",
   "/ops": "Audit",
   "/ops/terminal": "Terminal",
   "/settings": "Settings",
@@ -34,9 +34,7 @@ export function AppShell() {
   const location = useLocation();
   const { servers, loading, error } = useServersContext();
   const title =
-    location.pathname === "/" && servers.length >= 2
-      ? "All servers"
-      : (TITLES[location.pathname] ?? "Tracelyn");
+    TITLES[location.pathname] ?? "Tracelyn";
   const needsWelcome =
     !loading &&
     !error &&
@@ -78,7 +76,6 @@ export function AppShell() {
           </main>
         </SidebarInset>
       </SidebarProvider>
-      <AlertAnnouncer />
       <HostKeyDialog />
     </TimeRangeProvider>
   );

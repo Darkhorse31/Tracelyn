@@ -137,6 +137,7 @@ pub fn evaluate_live_alerts(
     let metrics_for_intel = metrics.clone();
     let input = EvaluationInput {
         server_id: server_id.to_string(),
+        server_name: state.config.lock().get_server(server_id).map(|s| s.name.clone()).unwrap_or_else(|_| "Monitored server".into()),
         ts_ms: now_ms(),
         metrics,
         connected,

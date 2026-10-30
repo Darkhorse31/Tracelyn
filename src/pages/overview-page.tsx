@@ -1,20 +1,18 @@
+import { FleetHealth } from "@/components/alerts/fleet-health";
+import { OverviewGauges } from "@/components/alerts/overview-gauges";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { reportHostKeyError } from "@/components/security/host-key-dialog";
 import { ServerCard } from "@/components/servers/server-card";
 import { InfraSummaryCard } from "@/components/infra/summary-card";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useServersContext } from "@/contexts/servers-context";
 import { useOverviewMetrics } from "@/hooks/use-overview-metrics";
 import type { ConnectionStatus, ServerRecord } from "@/lib/types";
-import { Notice } from "@/components/status/notice";
-import { Masked } from "@/contexts/privacy-context";
-import { ServerImportDialog } from "@/components/servers/server-import-dialog";
+import { EmptyState, ErrorState } from "@/components/layout/enterprise";
 import { PageHeader } from "@/components/layout/page-header";
 
 function statusRank(status: ConnectionStatus | undefined): number {
@@ -73,7 +71,6 @@ export function OverviewPage() {
     useServersContext();
   const metricsById = useOverviewMetrics(true);
   const [addOpen, setAddOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const sorted = sortServers(servers, statusById, metricsById);
@@ -85,7 +82,7 @@ export function OverviewPage() {
       toast.success("Connected");
     } catch (err) {
       if (!reportHostKeyError(err)) {
-        toast.error("Connection failed", { description: String(err) });
+        toast.error("We could not connect to this server", { description: "Check the server address and your connection details, then try again." });
       }
     } finally {
       setBusyId(null);
@@ -112,49 +109,15 @@ export function OverviewPage() {
   }
 
   if (servers.length === 0) {
-    if (error) {
-      return (
-        <Notice tone="critical" title="Could not load servers">
-          <Masked text={error} />
-          <Button className="mt-3" variant="outline" onClick={() => void refresh().catch((err) => toast.error(String(err)))}>
-            Retry
-          </Button>
-        </Notice>
-      );
-    }
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border bg-card/50 px-6 py-16 text-center">
-        <h2 className="text-lg font-semibold">No servers configured</h2>
-        <p className="max-w-md text-sm text-muted-foreground">
-          Add a Linux VPS to verify SSH connectivity and see live CPU, memory,
-          disk, and load on this overview.
-        </p>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus data-icon="inline-start" />
-          Add server
-        </Button>
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          Import servers
-        </Button>
-        <div className="flex flex-wrap justify-center gap-2">
-          <Link to="/how-it-works" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-            How Tracelyn works
-          </Link>
-          <Link to="/setup" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-            Setup guide
-          </Link>
-        </div>
-        <ServerFormDialog open={addOpen} onOpenChange={setAddOpen} />
-        <ServerImportDialog open={importOpen} onOpenChange={setImportOpen} />
-      </div>
-    );
+    if (error) return <ErrorState retry={() => { void refresh().catch(() => toast.error("We could not load your servers. Try again.")); }} />;
+    return <><EmptyState title="Add your first server" description="Connect a server to see its health and get notified when something needs attention." action={<Button onClick={() => setAddOpen(true)}><Plus aria-hidden />Add server</Button>} /><ServerFormDialog open={addOpen} onOpenChange={setAddOpen} /></>;
   }
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Overview"
-        description="Unhealthy and high-utilization servers are sorted first. Metrics refresh about every 2 seconds while connected."
+        description="See which servers need attention and what to do next."
         actions={
           <Button variant="outline" onClick={() => setAddOpen(true)}>
             <Plus data-icon="inline-start" />
@@ -162,6 +125,8 @@ export function OverviewPage() {
           </Button>
         }
       />
+      <FleetHealth />
+      {selectedServerId && <OverviewGauges key={selectedServerId} serverId={selectedServerId} connected={statusById.get(selectedServerId)?.status === "connected"} />}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {sorted.map((server) => (
           <ServerCard
