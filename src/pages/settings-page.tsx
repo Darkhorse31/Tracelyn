@@ -203,6 +203,12 @@ export function SettingsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Link
+                    to={`/setup?server=${server.id}`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    Set up monitoring
+                  </Link>
                   <ConnectionStatusBadge
                     status={statusById.get(server.id)?.status ?? "disconnected"}
                   />

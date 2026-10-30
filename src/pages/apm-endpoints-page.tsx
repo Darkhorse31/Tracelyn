@@ -2,7 +2,6 @@ import { useId, useState } from "react";
 import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Link } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 import { formatMs, LatencyBandChart } from "@/components/apm/latency-band-chart";
 import { LatencyHeatmap } from "@/components/apm/latency-heatmap";
 import { HowToFix } from "@/components/setup/how-to-fix";
@@ -296,23 +295,14 @@ export function ApmEndpointsPage() {
         <Notice
           tone="warning"
           title={timingNotice.message}
-          action={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void navigator.clipboard.writeText(timingNotice.suggestedLine);
-                toast.success("Copied log format");
-              }}
-            >
-              Copy
-            </Button>
-          }
+          action={<HowToFix text="nginx timing log" />}
         >
-          <pre className="mt-2 overflow-x-auto rounded-md bg-background/60 p-2 font-mono text-xs">
-            {timingNotice.suggestedLine}
-          </pre>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs">Show what this will run</summary>
+            <pre className="mt-2 overflow-x-auto rounded-md bg-background/60 p-2 font-mono text-xs">
+              {timingNotice.suggestedLine}
+            </pre>
+          </details>
         </Notice>
       )}
 

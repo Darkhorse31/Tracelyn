@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use russh::client;
 use russh::ChannelMsg;
 use russh_keys::load_secret_key;
+use std::io::Cursor;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
@@ -464,15 +465,30 @@ pub async fn start_command_follow(
     session: &SshSession,
     cmd: &str,
 ) -> Result<tokio::sync::mpsc::Receiver<Result<String, String>>, SshError> {
+    start_command_follow_stdin(session, cmd, None).await
+}
+
+pub async fn start_command_follow_stdin(
+    session: &SshSession,
+    cmd: &str,
+    stdin: Option<Vec<u8>>,
+) -> Result<tokio::sync::mpsc::Receiver<Result<String, String>>, SshError> {
     let cmd = cmd.to_string();
     let channel = gate::retry_loop(
         || {
             let cmd = cmd.clone();
+            let stdin = stdin.clone();
             async move {
                 let channel = session.open_follow_once().await?;
                 if let Err(err) = channel.exec(false, cmd).await {
                     let _ = channel.close().await;
                     return Err(lift_russh(err));
+                }
+                if let Some(bytes) = stdin {
+                    if let Err(err) = channel.data(Cursor::new(bytes)).await {
+                        let _ = channel.close().await;
+                        return Err(lift_russh(err));
+                    }
                 }
                 Ok(channel)
             }
@@ -535,13 +551,23 @@ pub async fn start_command_follow(
     Ok(rx)
 }
 
+#[allow(dead_code)]
 pub async fn run_command_bytes(session: &SshSession, command: &str) -> Result<Vec<u8>, SshError> {
+    run_command_bytes_stdin(session, command, None).await
+}
+
+pub async fn run_command_bytes_stdin(
+    session: &SshSession,
+    command: &str,
+    stdin: Option<Vec<u8>>,
+) -> Result<Vec<u8>, SshError> {
     let command = command.to_string();
     gate::retry_loop(
         || {
             let command = command.clone();
+            let stdin = stdin.clone();
             async move {
-                let collected = exec_once(session, &command, false).await?;
+                let collected = exec_once(session, &command, false, stdin).await?;
                 finish_bytes(&command, collected)
             }
         },
@@ -561,7 +587,7 @@ pub async fn run_command_merged(session: &SshSession, command: &str) -> Result<S
         || {
             let command = command.clone();
             async move {
-                let joined = tokio::time::timeout(Duration::from_secs(8), exec_once(session, &command, true)).await;
+                let joined = tokio::time::timeout(Duration::from_secs(8), exec_once(session, &command, true, None)).await;
                 match joined {
                     Ok(result) => finish_merged(result?),
                     Err(_) => Err(SshError::Command("timed out".into())),
@@ -582,7 +608,7 @@ pub async fn run_command(session: &SshSession, command: &str) -> Result<String, 
         || {
             let command = command.clone();
             async move {
-                let collected = exec_once(session, &command, false).await?;
+                let collected = exec_once(session, &command, false, None).await?;
                 finish_stdout(&command, collected)
             }
         },
@@ -600,12 +626,54 @@ struct Collected {
     exit: Option<u32>,
 }
 
+pub struct CapturedCommand {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+pub async fn run_command_captured(
+    session: &SshSession,
+    command: &str,
+    stdin: Option<Vec<u8>>,
+) -> Result<CapturedCommand, SshError> {
+    let command = command.to_string();
+    let collected = gate::retry_loop(
+        || {
+            let command = command.clone();
+            let stdin = stdin.clone();
+            async move { exec_once(session, &command, true, stdin).await }
+        },
+        || session.reconnect(),
+        fail_kind,
+        jitter_unit,
+        |delay| async move { tokio::time::sleep(delay).await },
+    )
+    .await?;
+    Ok(CapturedCommand {
+        code: collected.exit.map(|code| code as i32).unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&collected.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&collected.stderr).into_owned(),
+    })
+}
+
 /// Open a fresh exec channel, read it to completion, then close it. The channel is never reused.
-async fn exec_once(session: &SshSession, command: &str, keep_stderr: bool) -> Result<Collected, SshError> {
+async fn exec_once(
+    session: &SshSession,
+    command: &str,
+    keep_stderr: bool,
+    stdin: Option<Vec<u8>>,
+) -> Result<Collected, SshError> {
     let mut channel = session.open_exec_once().await?;
     if let Err(err) = channel.exec(true, command.to_string()).await {
         let _ = channel.close().await;
         return Err(lift_russh(err));
+    }
+    if let Some(bytes) = stdin {
+        if let Err(err) = channel.data(Cursor::new(bytes)).await {
+            let _ = channel.close().await;
+            return Err(lift_russh(err));
+        }
     }
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();

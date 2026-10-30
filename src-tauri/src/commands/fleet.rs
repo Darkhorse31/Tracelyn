@@ -229,9 +229,15 @@ pub async fn discover_onboarding_apps(
     .map_err(|e| e.to_string())?;
     // Discover hidden apps too, so reopening the wizard can restore their visibility.
     let visible_overrides: Vec<_> = manual.iter().filter(|a| !a.hidden).cloned().collect();
+    let sudo_password = state.sudo_password(&server_id);
     let result = tokio::time::timeout(
         Duration::from_secs(45),
-        crate::apps::discover_apps(&session, &server_id, &visible_overrides),
+        crate::apps::discover_apps(
+            &session,
+            &server_id,
+            &visible_overrides,
+            sudo_password.as_deref(),
+        ),
     )
     .await;
     let _ = session

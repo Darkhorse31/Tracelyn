@@ -47,6 +47,9 @@ pub struct AppState {
     log_windows: Mutex<HashMap<String, LogStreamSnapshot>>,
     sessions: Mutex<HashMap<String, Arc<SshSession>>>,
     live_metrics: Mutex<HashSet<String>>,
+    sudo_passwords: Mutex<HashMap<String, String>>,
+    monitoring: Mutex<HashMap<String, crate::setup::wizard::Wizard>>,
+    monitoring_busy: Mutex<HashSet<String>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -102,7 +105,46 @@ impl AppState {
             log_windows: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
             live_metrics: Mutex::new(HashSet::new()),
+            sudo_passwords: Mutex::new(HashMap::new()),
+            monitoring: Mutex::new(HashMap::new()),
+            monitoring_busy: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub fn set_sudo_password(&self, server_id: &str, password: String) {
+        if password.is_empty() {
+            self.sudo_passwords.lock().remove(server_id);
+        } else {
+            self.sudo_passwords.lock().insert(server_id.to_string(), password);
+        }
+    }
+
+    pub fn sudo_password(&self, server_id: &str) -> Option<String> {
+        self.sudo_passwords.lock().get(server_id).cloned()
+    }
+
+    pub fn clear_sudo_password(&self, server_id: &str) {
+        self.sudo_passwords.lock().remove(server_id);
+    }
+
+    pub fn monitoring(&self, server_id: &str) -> crate::setup::wizard::Wizard {
+        self.monitoring
+            .lock()
+            .get(server_id)
+            .cloned()
+            .unwrap_or_else(crate::setup::wizard::Wizard::fresh)
+    }
+
+    pub fn save_monitoring(&self, server_id: &str, wizard: crate::setup::wizard::Wizard) {
+        self.monitoring.lock().insert(server_id.to_string(), wizard);
+    }
+
+    pub fn try_begin_monitoring(&self, server_id: &str) -> bool {
+        self.monitoring_busy.lock().insert(server_id.to_string())
+    }
+
+    pub fn end_monitoring(&self, server_id: &str) {
+        self.monitoring_busy.lock().remove(server_id);
     }
 
     pub fn attach_session(&self, server_id: &str, session: Arc<SshSession>) {
@@ -111,6 +153,7 @@ impl AppState {
 
     pub fn detach_session(&self, server_id: &str) {
         self.sessions.lock().remove(server_id);
+        self.clear_sudo_password(server_id);
     }
 
     pub fn session(&self, server_id: &str) -> Option<Arc<SshSession>> {

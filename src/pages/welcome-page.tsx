@@ -10,7 +10,6 @@ import {
   Server,
   Sparkles,
 } from "lucide-react";
-import { toast } from "sonner";
 import { ServerFormDialog } from "@/components/servers/server-form-dialog";
 import { ServerImportDialog } from "@/components/servers/server-import-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -26,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Notice } from "@/components/status/notice";
 import { PageSkeleton } from "@/components/status/page-skeleton";
 import { useServersContext } from "@/contexts/servers-context";
-import { Masked, usePrivacy } from "@/contexts/privacy-context";
+import { Masked } from "@/contexts/privacy-context";
 import {
   useRememberedState,
   writePreference,
@@ -60,7 +59,6 @@ export function WelcomePage() {
     selectedServerId,
     setSelectedServerId,
   } = useServersContext();
-  const { mask } = usePrivacy();
   const [savedStep, setStep] = useRememberedState("wizard-step", 0);
   const step = Math.max(0, Math.min(5, savedStep));
   const server = servers.find((s) => s.id === selectedServerId);
@@ -458,24 +456,19 @@ export function WelcomePage() {
                           ))}
                           {check.command && (
                             <div className="mt-3 flex flex-col gap-2">
-                              <pre className="overflow-auto rounded-md bg-muted p-3 text-xs">
-                                <Masked text={check.command} />
-                              </pre>
                               <Button
                                 className="w-fit"
                                 size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  void navigator.clipboard
-                                    .writeText(mask(check.command ?? ""))
-                                    .then(() => toast.success("Command copied"))
-                                    .catch(() =>
-                                      toast.error("Could not copy command"),
-                                    );
-                                }}
+                                render={<Link to={selectedServerId ? `/setup?server=${selectedServerId}` : "/setup"} />}
                               >
-                                Copy command
+                                Set up monitoring
                               </Button>
+                              <details>
+                                <summary className="cursor-pointer text-xs text-muted-foreground">Show what this will run</summary>
+                                <pre className="mt-2 overflow-auto rounded-md bg-muted p-3 text-xs">
+                                  <Masked text={check.command} />
+                                </pre>
+                              </details>
                             </div>
                           )}
                         </details>

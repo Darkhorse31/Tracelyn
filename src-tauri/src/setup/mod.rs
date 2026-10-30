@@ -1,3 +1,5 @@
+pub mod wizard;
+
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -904,5 +906,49 @@ __PATH__\tp0\tok
         for id in ["nginx-logs", "journald", "pm2", "docker", "sudo", "redis", "otel"] {
             assert_eq!(checks.iter().find(|c| c.id == id).unwrap().status, "pass", "{id}");
         }
+    }
+}
+
+pub fn shell_single(script: &str) -> String {
+    format!("'{}'", script.replace('\'', "'\"'\"'"))
+}
+
+/// Elevate read-only probes when noninteractive sudo is available.
+pub fn privileged_read(script: &str) -> String {
+    let quoted = shell_single(script);
+    format!("if [ \"$(id -u)\" = 0 ]; then sh -c {quoted}; elif sudo -n true 2>/dev/null; then sudo -n sh -c {quoted}; else sh -c {quoted}; fi")
+}
+
+/// Run a script with `sudo -S`. The password is sent on stdin and is never placed in the command.
+pub fn sudo_stdin_read(script: &str) -> String {
+    let quoted = shell_single(script);
+    format!("if [ \"$(id -u)\" = 0 ]; then sh -c {quoted}; else sudo -S -p '' -- sh -c {quoted}; fi")
+}
+
+pub fn password_bytes(password: &str) -> Vec<u8> {
+    let mut bytes = password.as_bytes().to_vec();
+    if !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
+    }
+    bytes
+}
+
+#[cfg(test)]
+mod privileged_read_tests {
+    #[test]
+    fn quotes_script() {
+        let script = super::privileged_read("printf '%s' \"$HOME\"");
+        assert!(script.contains("sudo -n sh -c"));
+        assert!(script.contains("'\"'\"'"));
+        assert!(!script.contains("sudo -S"));
+    }
+
+    #[test]
+    fn sudo_password_stays_off_the_command_line() {
+        let script = super::sudo_stdin_read("printf '%s' \"$HOME\"");
+        assert!(script.contains("sudo -S -p '' -- sh -c"));
+        assert!(!script.contains("hunter2"));
+        let bytes = super::password_bytes("hunter2");
+        assert_eq!(bytes, b"hunter2\n");
     }
 }

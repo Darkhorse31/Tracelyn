@@ -168,21 +168,16 @@ function EngineCard({
         <span className="text-xs uppercase tracking-wide text-muted-foreground">{loggingOn ? "logging on" : "logging off"}</span>
       </div>
       <p className="text-sm text-muted-foreground">{hint}</p>
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-xs font-medium">Setting to enable</h4>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            void navigator.clipboard.writeText(snippet);
-            toast.success("Copied database setting");
-          }}
-        >
-          Copy
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-medium">Database logging</h4>
+        <Button type="button" size="sm" variant="outline" render={<Link to={`/setup?server=${serverId}`} />}>
+          Set up monitoring
         </Button>
       </div>
-      <pre className="max-h-36 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs">{snippet}</pre>
+      <details>
+        <summary className="cursor-pointer text-xs text-muted-foreground">Show what this will run</summary>
+        <pre className="mt-2 max-h-36 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-xs">{snippet}</pre>
+      </details>
       <form
         className="flex flex-col gap-2"
         onSubmit={(event) => {

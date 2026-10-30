@@ -189,6 +189,18 @@ fn scan_value(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
+fn key<'a>(value: &'a Value, names: &[&str]) -> Option<&'a Value> {
+    names.iter().find_map(|name| value.get(*name))
+}
+
+fn key_arr<'a>(value: &'a Value, names: &[&str]) -> Option<&'a Vec<Value>> {
+    key(value, names).and_then(|item| item.as_array())
+}
+
+fn key_str<'a>(value: &'a Value, names: &[&str]) -> Option<&'a str> {
+    key(value, names).and_then(|item| item.as_str())
+}
+
 fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
     if let Some(items) = value.as_array() {
         let mut any = false;
@@ -200,13 +212,13 @@ fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
     if !recognized(value) {
         return false;
     }
-    if let Some(resources) = value.get("resourceSpans").and_then(|v| v.as_array()) {
+    if let Some(resources) = key_arr(value, &["resourceSpans", "resource_spans"]) {
         for resource in resources {
             let service = service_name(resource.get("resource"));
-            let scopes = resource
-                .get("scopeSpans")
-                .or_else(|| resource.get("instrumentationLibrarySpans"))
-                .and_then(|v| v.as_array());
+            let scopes = key_arr(
+                resource,
+                &["scopeSpans", "scope_spans", "instrumentationLibrarySpans", "instrumentation_library_spans"],
+            );
             if let Some(scopes) = scopes {
                 for scope in scopes {
                     if let Some(spans) = scope.get("spans").and_then(|v| v.as_array()) {
@@ -218,16 +230,16 @@ fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
             }
         }
     }
-    if let Some(resources) = value.get("resourceLogs").and_then(|v| v.as_array()) {
+    if let Some(resources) = key_arr(value, &["resourceLogs", "resource_logs"]) {
         for resource in resources {
             let service = service_name(resource.get("resource"));
-            let scopes = resource
-                .get("scopeLogs")
-                .or_else(|| resource.get("instrumentationLibraryLogs"))
-                .and_then(|v| v.as_array());
+            let scopes = key_arr(
+                resource,
+                &["scopeLogs", "scope_logs", "instrumentationLibraryLogs", "instrumentation_library_logs"],
+            );
             if let Some(scopes) = scopes {
                 for scope in scopes {
-                    if let Some(logs) = scope.get("logRecords").and_then(|v| v.as_array()) {
+                    if let Some(logs) = key_arr(scope, &["logRecords", "log_records"]) {
                         for log in logs {
                             push_log(batch, log, &service);
                         }
@@ -236,12 +248,12 @@ fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
             }
         }
     }
-    if let Some(resources) = value.get("resourceMetrics").and_then(|v| v.as_array()) {
+    if let Some(resources) = key_arr(value, &["resourceMetrics", "resource_metrics"]) {
         for resource in resources {
-            let scopes = resource
-                .get("scopeMetrics")
-                .or_else(|| resource.get("instrumentationLibraryMetrics"))
-                .and_then(|v| v.as_array());
+            let scopes = key_arr(
+                resource,
+                &["scopeMetrics", "scope_metrics", "instrumentationLibraryMetrics", "instrumentation_library_metrics"],
+            );
             if let Some(scopes) = scopes {
                 for scope in scopes {
                     if let Some(metrics) = scope.get("metrics").and_then(|v| v.as_array()) {
@@ -253,7 +265,7 @@ fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
             }
         }
     }
-    if value.get("traceId").is_some() && value.get("spanId").is_some() {
+    if key(value, &["traceId", "trace_id"]).is_some() && key(value, &["spanId", "span_id"]).is_some() {
         let service = service_name(Some(value));
         push_span(batch, value, &service);
     }
@@ -261,10 +273,10 @@ fn ingest_value(value: &Value, batch: &mut OtelBatch) -> bool {
 }
 
 fn recognized(value: &Value) -> bool {
-    value.get("resourceSpans").is_some()
-        || value.get("resourceLogs").is_some()
-        || value.get("resourceMetrics").is_some()
-        || (value.get("traceId").is_some() && value.get("spanId").is_some())
+    key(value, &["resourceSpans", "resource_spans"]).is_some()
+        || key(value, &["resourceLogs", "resource_logs"]).is_some()
+        || key(value, &["resourceMetrics", "resource_metrics"]).is_some()
+        || (key(value, &["traceId", "trace_id"]).is_some() && key(value, &["spanId", "span_id"]).is_some())
 }
 
 fn push_span(batch: &mut OtelBatch, span: &Value, service: &str) {
@@ -272,10 +284,10 @@ fn push_span(batch: &mut OtelBatch, span: &Value, service: &str) {
         batch.dropped += 1;
         return;
     }
-    let Some(trace_id) = span.get("traceId").and_then(|v| v.as_str()) else {
+    let Some(trace_id) = key_str(span, &["traceId", "trace_id"]) else {
         return;
     };
-    let Some(span_id) = span.get("spanId").and_then(|v| v.as_str()) else {
+    let Some(span_id) = key_str(span, &["spanId", "span_id"]) else {
         return;
     };
     if trace_id.is_empty() || span_id.is_empty() {
@@ -293,8 +305,8 @@ fn push_span(batch: &mut OtelBatch, span: &Value, service: &str) {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("unknown");
-    let start_ns = unix_nano(span.get("startTimeUnixNano")).unwrap_or(0);
-    let end_ns = unix_nano(span.get("endTimeUnixNano")).unwrap_or(start_ns);
+    let start_ns = unix_nano(key(span, &["startTimeUnixNano", "start_time_unix_nano"])).unwrap_or(0);
+    let end_ns = unix_nano(key(span, &["endTimeUnixNano", "end_time_unix_nano"])).unwrap_or(start_ns);
     let duration_us = if end_ns >= start_ns {
         ((end_ns - start_ns) / 1000) as i64
     } else {
@@ -322,9 +334,7 @@ fn push_span(batch: &mut OtelBatch, span: &Value, service: &str) {
     batch.spans.push(ParsedSpan {
         trace_id: trace_id.to_string(),
         span_id: span_id.to_string(),
-        parent_span_id: span
-            .get("parentSpanId")
-            .and_then(|v| v.as_str())
+        parent_span_id: key_str(span, &["parentSpanId", "parent_span_id"])
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
         service,
@@ -347,17 +357,13 @@ fn push_log(batch: &mut OtelBatch, log: &Value, service: &str) {
     }
     let body = log_body(log.get("body"));
     let severity = severity_of(log);
-    let ts_ns = unix_nano(log.get("timeUnixNano"))
-        .or_else(|| unix_nano(log.get("observedTimeUnixNano")))
+    let ts_ns = unix_nano(key(log, &["timeUnixNano", "time_unix_nano"]))
+        .or_else(|| unix_nano(key(log, &["observedTimeUnixNano", "observed_time_unix_nano"])))
         .unwrap_or(0);
-    let trace_id = log
-        .get("traceId")
-        .and_then(|v| v.as_str())
+    let trace_id = key_str(log, &["traceId", "trace_id"])
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    let span_id = log
-        .get("spanId")
-        .and_then(|v| v.as_str())
+    let span_id = key_str(log, &["spanId", "span_id"])
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
     if is_error_severity(&severity) {
@@ -383,11 +389,10 @@ fn push_metric(batch: &mut OtelBatch, metric: &Value) {
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("otel.metric");
-    for key in ["gauge", "sum"] {
+    for metric_key in ["gauge", "sum"] {
         let Some(points) = metric
-            .get(key)
-            .and_then(|v| v.get("dataPoints"))
-            .and_then(|v| v.as_array())
+            .get(metric_key)
+            .and_then(|v| key_arr(v, &["dataPoints", "data_points"]))
         else {
             continue;
         };
@@ -396,14 +401,13 @@ fn push_metric(batch: &mut OtelBatch, metric: &Value) {
                 batch.dropped += 1;
                 return;
             }
-            let Some(value) = point
-                .get("asDouble")
+            let Some(value) = key(point, &["asDouble", "as_double"])
                 .and_then(json_f64)
-                .or_else(|| point.get("asInt").and_then(json_f64))
+                .or_else(|| key(point, &["asInt", "as_int"]).and_then(json_f64))
             else {
                 continue;
             };
-            let ts = unix_nano(point.get("timeUnixNano")).unwrap_or(0);
+            let ts = unix_nano(key(point, &["timeUnixNano", "time_unix_nano"])).unwrap_or(0);
             batch.metrics.push(ParsedMetric {
                 name: name.chars().take(80).collect(),
                 ts_ms: (ts / 1_000_000) as i64,
@@ -478,10 +482,17 @@ fn otel_any(value: &Value) -> Value {
     let Some(obj) = value.as_object() else {
         return value.clone();
     };
-    if let Some(text) = obj.get("stringValue") {
+    if let Some(text) = obj.get("stringValue").or_else(|| obj.get("string_value")) {
         return text.clone();
     }
-    if let Some(text) = obj.get("intValue").or_else(|| obj.get("doubleValue")).or_else(|| obj.get("boolValue")) {
+    if let Some(text) = obj
+        .get("intValue")
+        .or_else(|| obj.get("int_value"))
+        .or_else(|| obj.get("doubleValue"))
+        .or_else(|| obj.get("double_value"))
+        .or_else(|| obj.get("boolValue"))
+        .or_else(|| obj.get("bool_value"))
+    {
         return text.clone();
     }
     if let Some(arr) = obj.get("arrayValue").and_then(|v| v.get("values")).and_then(|v| v.as_array()) {
@@ -593,17 +604,17 @@ fn log_body(value: Option<&Value>) -> String {
     if let Some(text) = value.as_str() {
         return text.to_string();
     }
-    if let Some(text) = value.get("stringValue").and_then(|v| v.as_str()) {
+    if let Some(text) = key_str(value, &["stringValue", "string_value"]) {
         return text.to_string();
     }
     value.to_string()
 }
 
 fn severity_of(log: &Value) -> String {
-    if let Some(text) = log.get("severityText").and_then(|v| v.as_str()) {
+    if let Some(text) = key_str(log, &["severityText", "severity_text"]) {
         return text.to_ascii_lowercase();
     }
-    match log.get("severityNumber").and_then(|v| v.as_u64()) {
+    match key(log, &["severityNumber", "severity_number"]).and_then(|v| v.as_u64()) {
         Some(n) if n >= 21 => "fatal",
         Some(n) if n >= 17 => "error",
         Some(n) if n >= 13 => "warn",
@@ -753,6 +764,25 @@ mod tests {
         assert_eq!(batch.logs.len(), 1);
         assert_eq!(batch.logs[0].service, "bharattales-web");
         assert!(batch.logs[0].body.contains("request served"));
+        assert_eq!(asm.malformed, 0);
+    }
+
+    #[test]
+    fn file_exporter_fixture_parses_camel_and_snake() {
+        let file = "\
+{\"resourceSpans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"bharattales-web\"}},{\"key\":\"telemetry.sdk.language\",\"value\":{\"stringValue\":\"nodejs\"}}]},\"scopeSpans\":[{\"scope\":{\"name\":\"@opentelemetry/instrumentation-http\"},\"spans\":[{\"traceId\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"spanId\":\"00f067aa0ba902b7\",\"parentSpanId\":\"\",\"name\":\"GET /\",\"kind\":2,\"startTimeUnixNano\":\"1700000000000000000\",\"endTimeUnixNano\":\"1700000000120000000\",\"attributes\":[{\"key\":\"http.request.method\",\"value\":{\"stringValue\":\"GET\"}}],\"status\":{\"code\":1}}]}]}]}\n\
+{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"bharattales-web\"}}]},\"scopeLogs\":[{\"logRecords\":[{\"timeUnixNano\":\"1700000000200000000\",\"severityText\":\"INFO\",\"body\":{\"stringValue\":\"request served\"},\"traceId\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"spanId\":\"00f067aa0ba902b7\"}]}]}]}\n\
+{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"bharattales-web\"}}]},\"scopeMetrics\":[{\"metrics\":[{\"name\":\"http.server.duration\",\"gauge\":{\"dataPoints\":[{\"asDouble\":12.5,\"timeUnixNano\":\"1700000000120000000\"}]}}]}]}]}\n\
+{\"resource_spans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"string_value\":\"legacy\"}}]},\"scope_spans\":[{\"spans\":[{\"trace_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"span_id\":\"bbbbbbbbbbbbbbbb\",\"name\":\"old\",\"kind\":3,\"start_time_unix_nano\":\"1000\",\"end_time_unix_nano\":\"5000\"}]}]}]}\n";
+        let mut asm = OtelAssembler::default();
+        let batch = asm.push(file);
+        assert_eq!(batch.spans.len(), 2);
+        assert_eq!(batch.spans[0].service, "bharattales-web");
+        assert_eq!(batch.spans[1].service, "legacy");
+        assert_eq!(batch.spans[1].kind, "client");
+        assert_eq!(batch.logs.len(), 1);
+        assert_eq!(batch.metrics.len(), 1);
+        assert_eq!(batch.metrics[0].value, 12.5);
         assert_eq!(asm.malformed, 0);
     }
 }
