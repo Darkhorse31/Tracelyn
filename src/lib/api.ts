@@ -305,6 +305,49 @@ export async function runSetupChecks(serverId: string): Promise<SetupCheck[]> {
   return invoke<SetupCheck[]>("run_setup_checks", { serverId });
 }
 
+export interface MonitoringStep {
+  id: string;
+  title: string;
+  status: "waiting" | "running" | "done" | "skipped" | "failed" | string;
+  detail: string;
+  reason: string;
+  details: string;
+  script: string;
+}
+
+export interface MonitoringSetup {
+  steps: MonitoringStep[];
+  pause: "none" | "needPassword" | "chooseApps" | string;
+  summary: string;
+  detected: { nodes: { name: string; cwd: string }[] };
+  selectedApps: string[];
+}
+
+export interface MonitoringEvent {
+  serverId: string;
+  wizard: MonitoringSetup;
+}
+
+export async function monitoringSetupStatus(serverId: string): Promise<MonitoringSetup> {
+  return invoke<MonitoringSetup>("monitoring_setup_status", { serverId });
+}
+
+export async function monitoringSetupStart(
+  serverId: string,
+  sudoPassword?: string,
+  apps?: string[],
+): Promise<MonitoringSetup> {
+  return invoke<MonitoringSetup>("monitoring_setup_start", { serverId, sudoPassword, apps });
+}
+
+export async function monitoringSetupRetry(serverId: string): Promise<MonitoringSetup> {
+  return invoke<MonitoringSetup>("monitoring_setup_retry", { serverId });
+}
+
+export async function monitoringSetupUndo(serverId: string): Promise<MonitoringSetup> {
+  return invoke<MonitoringSetup>("monitoring_setup_undo", { serverId });
+}
+
 export interface SshKeyList {
   directory: string;
   keys: string[];

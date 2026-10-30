@@ -307,7 +307,9 @@ async fn plan(app: &AppHandle, state: &AppState, r: &ActionRequest) -> Result<Pl
     let script = format!("set -eu\n{}", commands.join("\n"));
     let sudo = if s.username == "root" {
         ""
-    } else if crate::secrets::get_secret(&s.id, crate::secrets::SecretKind::SudoPassword).is_ok() {
+    } else if state.sudo_password(&s.id).is_some()
+        || crate::secrets::get_secret(&s.id, crate::secrets::SecretKind::SudoPassword).is_ok()
+    {
         "sudo -S -p '' "
     } else {
         "sudo -n "
@@ -378,13 +380,15 @@ async fn execute(
     let p = plan(&app, &state, &request).await?;
     let s = server(&state, &request.server_id)?;
     let sudo_password = if crate::ops::needs_sudo_stdin(&p.command) {
-        Some(
-            crate::secrets::get_secret(&s.id, crate::secrets::SecretKind::SudoPassword)
-                .map_err(|_| "Save the sudo password in Settings and retry")?,
-        )
+        state.sudo_password(&s.id).or_else(|| {
+            crate::secrets::get_secret(&s.id, crate::secrets::SecretKind::SudoPassword).ok()
+        })
     } else {
         None
     };
+    if crate::ops::needs_sudo_stdin(&p.command) && sudo_password.is_none() {
+        return Err("Enter the administrator password in Set up monitoring and retry.".into());
+    }
     let id = uuid::Uuid::new_v4().to_string();
     let timestamp = crate::intel::now_ms();
     let audit = |exit_code, output: &str| {
@@ -474,6 +478,39 @@ async fn execute(
         }
     }
 }
+
+pub async fn ensure_for_setup(app: &AppHandle, state: &AppState, server_id: &str) -> Result<String, String> {
+    let status = remote(
+        state,
+        server_id,
+        "if systemctl is-active --quiet tracelyn-companion; then echo running; else echo stopped; fi",
+    )
+    .await
+    .unwrap_or_else(|_| "stopped".into());
+    if status.trim() == "running" {
+        return Ok("The companion is already running.".into());
+    }
+    let request = ActionRequest {
+        server_id: server_id.into(),
+        kind: "companion".into(),
+        verb: "install".into(),
+        target: "tracelyn-companion".into(),
+        pm2_user: None,
+        pm2_home: None,
+        log_paths: vec![],
+        use_sudo: true,
+        confirm_name: Some("tracelyn-companion".into()),
+        health_timeout_secs: Some(40),
+    };
+    match execute(app, state, request).await {
+        Ok(_) => Ok("The companion is running.".into()),
+        Err(err) if err.contains("Operations mode") => {
+            Err("Turn on Operations in Settings, then retry this step.".into())
+        }
+        Err(err) => Err(crate::setup::wizard::mask_private(&err)),
+    }
+}
+
 #[tauri::command]
 pub async fn companion_query(
     state: State<'_, AppState>,

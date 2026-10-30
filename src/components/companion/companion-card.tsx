@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { OpsConfirmDialog } from "@/components/ops/confirm-action-dialog"
+import { HowToFix } from "@/components/setup/how-to-fix"
 import { useServersContext } from "@/contexts/servers-context"
 import { useLicense } from "@/contexts/license-context"
 import { usePrivacy } from "@/contexts/privacy-context"
@@ -10,7 +11,7 @@ import type { ActionRequest, OpsVerb } from "@/lib/ops-types"
 
 interface Status { state: string, version?: string, uptimeSecs?: number, lastHeartbeat?: number, diskUsed?: number }
 export function CompanionCard({ serverId }: { serverId?: string | null }) {
-  const { servers, selectedServerId } = useServersContext()
+  const { selectedServerId } = useServersContext()
   const selected = serverId === undefined ? selectedServerId : serverId
   const { license } = useLicense()
   const { mask, enabled: privacy } = usePrivacy()
@@ -68,9 +69,8 @@ export function CompanionCard({ serverId }: { serverId?: string | null }) {
         <summary className="cursor-pointer font-medium">Setup guide and sudo requirements</summary>
         <div className="mt-4 space-y-4">
           <p>Enable Operations mode in Settings. Each action opens a dry-run preview of the commands and asks you to confirm before execution.</p>
-          <p>Installation needs a Linux server with systemd, SFTP, sha256sum, and sudo. Save the server sudo password under Operations in Settings, or use passwordless sudo. Use <code>sudo visudo</code> to configure access with your administrator. Verify passwordless access with <code>sudo -n sh -c true</code>.</p>
-          <p>For read access after installation, add your SSH account to the companion group and reconnect. This group can read monitoring data. It cannot read channel secrets.</p>
-          <pre className="overflow-auto rounded-lg bg-muted p-3">{privacy ? "sudo usermod -aG tracelyn [username]" : `sudo usermod -aG tracelyn ${servers.find(s => s.id === selected)?.username ?? "YOUR_SSH_USER"}`}</pre>
+          <p>Installation needs a Linux server with systemd and sudo. Set up monitoring asks for the administrator password in the app and grants read access. The companion group can read monitoring data. It cannot read channel secrets.</p>
+          <HowToFix text="companion log access" />
           <p>The service runs as tracelyn with access to adm and systemd-journal. Channel secrets are stored in a mode 600 file owned by tracelyn. Uninstall preserves history and configuration for recovery.</p>
           <p>Metrics are sampled every 5 seconds and top processes every 30 seconds. Raw samples remain for 48 hours and minute summaries for 30 days. Memory is capped at 64 MB. CPU, disk usage, and outbound traffic depend on configured checks and log volume.</p>
           <p>Linux binaries are optional desktop resources. If a matching binary is missing, Install shows the build command and monitoring continues over SSH.</p>

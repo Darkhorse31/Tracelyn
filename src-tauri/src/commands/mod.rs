@@ -3,6 +3,7 @@ pub mod apps;
 pub mod fleet;
 pub mod diagnostics;
 pub mod setup;
+pub mod monitoring;
 pub mod ops;
 pub mod insight;
 pub mod intel;

@@ -1,7 +1,6 @@
 import { useMemo } from "react";
 import { useRememberedState } from "@/hooks/use-remembered-state";
 import { Globe } from "lucide-react";
-import { toast } from "sonner";
 import { formatBytesPerSec } from "@/components/charts/metric-uplot";
 import { HowToFix } from "@/components/setup/how-to-fix";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,7 +9,6 @@ import { MetricCard } from "@/components/web/metric-card";
 import { SparklineChart } from "@/components/web/sparkline-chart";
 import { StatusStackBar } from "@/components/web/status-stack-bar";
 import { VirtualLogList } from "@/components/web/virtual-log-list";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -131,8 +129,7 @@ export function WebTrafficPage() {
           title="web-access: access logs not readable"
           action={<HowToFix text="web-access: access logs not readable" />}
         >
-          Make sure the SSH user can read the web server log files, for example via the{" "}
-          <span className="font-mono text-xs">adm</span> group on Debian/Ubuntu.
+          Use Set up monitoring so this login can read the web server logs.
         </Notice>
       )}
       {isLive && !loading && !webDetected && !permissionDenied && (
@@ -145,23 +142,14 @@ export function WebTrafficPage() {
         <Notice
           tone="warning"
           title={metrics.timingNotice.message}
-          action={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void navigator.clipboard.writeText(metrics.timingNotice?.suggestedLine ?? "");
-                toast.success("Copied log_format");
-              }}
-            >
-              Copy
-            </Button>
-          }
+          action={<HowToFix text="nginx timing log" />}
         >
-          <pre className="mt-2 overflow-x-auto rounded-md bg-background/60 p-2 font-mono text-xs">
-            {metrics.timingNotice.suggestedLine}
-          </pre>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs">Show what this will run</summary>
+            <pre className="mt-2 overflow-x-auto rounded-md bg-background/60 p-2 font-mono text-xs">
+              {metrics.timingNotice.suggestedLine}
+            </pre>
+          </details>
         </Notice>
       )}
 

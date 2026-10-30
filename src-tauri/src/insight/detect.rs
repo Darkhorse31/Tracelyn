@@ -309,6 +309,7 @@ find /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \( -name '*.json' 
 echo ENDSCAN
 echo STATS
 {
+  printf '%s\n' /var/log/otel/telemetry.json
   find /var/log/otel /var/log/opentelemetry -maxdepth 2 -type f \( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.json.*' \) ! -name '*.gz' 2>/dev/null
   grep -hE '^[[:space:]]*path:[[:space:]]*/' /etc/otelcol-contrib/config.yaml /etc/otelcol/config.yaml 2>/dev/null | sed -n 's/.*path:[[:space:]]*//p' | tr -d "\"'"
 } | sort -u | head -n 40 | while read -r p; do
@@ -320,7 +321,7 @@ echo STATS
     grep -m 1 . -- "$p" 2>/dev/null | head -c 500
     echo
     echo ENDSAMPLE
-  elif [ -e "$p" ]; then
+  elif [ -e "$p" ] || { parent=$(dirname -- "$p"); [ -d "$parent" ] && [ ! -x "$parent" ]; }; then
     echo "DENY 0 0 $p"
   else
     echo "MISS 0 0 $p"
@@ -787,6 +788,8 @@ path: /var/log/mongodb/mongod.log
         assert!(!script.contains("a'b"));
         assert!(script.contains("slow_query_log"));
         assert!(script.contains("otelcol-contrib"));
+        assert!(script.contains("/var/log/otel/telemetry.json"));
+        assert!(script.contains("[ ! -x \"$parent\" ]"));
         assert!(script.contains("--config"));
     }
 

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Masked, usePrivacy } from "@/contexts/privacy-context";
+import { Masked } from "@/contexts/privacy-context";
 import { useServersContext } from "@/contexts/servers-context";
+import { MonitoringWizard } from "@/components/setup/monitoring-wizard";
 import { runSetupChecks, type SetupCheck } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +26,6 @@ const STATUS_CLASS: Record<string, string> = {
 
 export function SetupPage() {
   const { servers, selectedServerId, setSelectedServerId } = useServersContext();
-  const { mask } = usePrivacy();
   const [params] = useSearchParams();
   const step = params.get("step");
   const [checks, setChecks] = useState<SetupCheck[] | null>(null);
@@ -77,7 +76,7 @@ export function SetupPage() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <PageHeader
         title="Setup guide"
-        description={`Read-only checks for the access Tracelyn needs${server ? ` on ${server.name}` : ""}. Commands are copied for you to run. Tracelyn does not change the server.`}
+        description={server ? `Set up monitoring on ${server.name}. Tracelyn runs the steps and can undo them.` : "Set up monitoring for the selected server."}
         actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link to="/how-it-works" className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
@@ -101,6 +100,7 @@ export function SetupPage() {
         </Card>
       ) : (
         <>
+          <MonitoringWizard serverId={server.id} />
           <p className="sr-only" aria-live="polite">
             {busy ? "Running read-only checks." : summary}
           </p>
@@ -139,22 +139,12 @@ export function SetupPage() {
                         </ul>
                       )}
                       {check.command && (
-                        <div className="flex flex-wrap items-start gap-2">
-                          <pre className="min-w-0 flex-1 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
+                        <details className="text-sm">
+                          <summary className="cursor-pointer text-muted-foreground">Show what this will run</summary>
+                          <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-xs">
                             <Masked text={check.command ?? ""} />
                           </pre>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              void navigator.clipboard.writeText(mask(check.command ?? ""));
-                              toast.success("Command copied");
-                            }}
-                          >
-                            Copy
-                          </Button>
-                        </div>
+                        </details>
                       )}
                       <div>
                         <Button

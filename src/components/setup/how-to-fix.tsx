@@ -16,7 +16,7 @@ export function HowToFix({ text, className }: { text: string; className?: string
       to={query ? `/setup?${query}` : "/setup"}
       className={cn(buttonVariants({ variant: "outline", size: "sm" }), className)}
     >
-      How to fix
+      Set up monitoring
     </Link>
   );
 }

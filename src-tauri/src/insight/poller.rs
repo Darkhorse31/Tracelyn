@@ -9,7 +9,7 @@ use crate::insight::store;
 use crate::insight::{otel::ParsedSpan, stack::ErrorDraft};
 use crate::logs::level::LogLevel;
 use crate::logs::LogRingBuffer;
-use crate::ssh::{run_command, run_command_bytes, SshSession};
+use crate::ssh::{run_command_bytes_stdin, SshSession};
 use crate::state::AppState;
 use crate::storage::RawSample;
 use std::collections::HashMap;
@@ -131,7 +131,7 @@ impl InsightPoller {
                 message: otel_message,
                 fix_hint: self.last_error.clone().or_else(|| {
                     Some(
-                        "Confirm a suggested file on the Traces page, or add the Collector file exporter path. The SSH user must be able to read it. Gzip rotations are ignored."
+                        "Use Set up monitoring so Tracelyn can read the collector file. Gzip rotations are ignored."
                             .into(),
                     )
                 }),
@@ -141,7 +141,7 @@ impl InsightPoller {
                 status: slow_status,
                 message: self.slow_summary.clone(),
                 fix_hint: Some(
-                    "Open Slow queries. Each database card has the exact setting to copy. Tracelyn only reads the log."
+                    "Open Slow queries. Check which databases are ready for monitoring."
                         .into(),
                 ),
             },
@@ -156,7 +156,14 @@ impl InsightPoller {
             .filter_map(|row| row.cwd.clone().map(|cwd| (row.id.clone(), cwd)))
             .collect();
         let script = detection_script(&dirs);
-        match run_command(session, &script).await {
+        let secret = app.state::<crate::state::AppState>().sudo_password(server_id);
+        let wrapped = if secret.is_some() {
+            crate::setup::sudo_stdin_read(&script)
+        } else {
+            crate::setup::privileged_read(&script)
+        };
+        let stdin = secret.as_deref().map(crate::setup::password_bytes);
+        match crate::ssh::run_command_captured(session, &wrapped, stdin).await.map(|out| out.stdout) {
             Ok(output) => {
                 let found = parse_detect_output(&output);
                 self.suggestions = found.suggestions.len();
@@ -266,7 +273,14 @@ impl InsightPoller {
                 return;
             }
         };
-        let raw = match run_command_bytes(session, &script).await {
+        let secret = app.state::<crate::state::AppState>().sudo_password(server_id);
+        let wrapped = if secret.is_some() {
+            crate::setup::sudo_stdin_read(&script)
+        } else {
+            crate::setup::privileged_read(&script)
+        };
+        let stdin = secret.as_deref().map(crate::setup::password_bytes);
+        let raw = match run_command_bytes_stdin(session, &wrapped, stdin).await {
             Ok(raw) => raw,
             Err(err) => {
                 self.note_file_error(file, &err.to_string());
@@ -426,8 +440,15 @@ impl InsightPoller {
         if file.kind == "otel" {
             self.files_error += 1;
             self.saw_otel = true;
-            if message.contains("missing") {
+            let lower = message.to_ascii_lowercase();
+            if lower.contains("permission") || lower.contains("denied") {
+                self.flag_deny = true;
+                self.last_error = Some(
+                    "The trace file exists but this login cannot read it. Use Set up monitoring to allow access.".into(),
+                );
+            } else if lower.contains("missing") {
                 self.flag_missing = true;
+                self.last_error = Some("The trace file is not on the server yet.".into());
             } else {
                 self.flag_deny = true;
             }
@@ -435,7 +456,7 @@ impl InsightPoller {
         if file.kind != "otel" {
             self.slow_problem = true;
             self.slow_summary = format!(
-                "Cannot read the {} log at {}: {message}. Grant the SSH user read access, for example by adding them to the adm group.",
+                "Cannot read the {} log at {}: {message}. Open monitoring setup to check access.",
                 file.kind, file.path
             );
         }
@@ -785,7 +806,7 @@ fn read_script(
         validate_log_path(previous)?;
     }
     let previous = if previous.is_empty() { path } else { previous };
-    if is_dir || !track_rewrite {
+    if is_dir {
         return Ok(format!(
             "f=$(ls -1t '{path}'/*.log '{path}'/*.json '{path}'/*.jsonl 2>/dev/null | head -n 1)\n\
              off={offset}\n\
@@ -801,13 +822,14 @@ fn read_script(
              esac\n"
         ));
     }
-    let cont = i32::from(cont);
+    let cont = i32::from(cont || !track_rewrite);
     // ponytail: mtime catches a same-size rewrite. A larger rewrite that still begins with '{' is read as an append.
     Ok(format!(
         "f='{path}'\n\
          off={offset}\n\
          prev_mt={stamp}\n\
          cont={cont}\n\
+         if [ ! -r \"$f\" ] && [ -e \"$f\" ]; then echo \"FILE $f\"; echo 'SIZE ERR Permission denied'; echo 'MODE ERR'; exit 0; fi\n\
          if [ ! -f \"$f\" ]; then echo FILE; echo 'SIZE MISSING'; echo 'MODE ERR'; exit 0; fi\n\
          echo \"FILE $f\"\n\
          sz=$(stat -c %s -- \"$f\" 2>&1) || true\n\
@@ -832,6 +854,7 @@ fn read_script(
                esac\n\
              fi\n\
              if [ \"$mode\" = TRUNC ] && [ \"$sz\" -gt {max} ]; then start=$((sz - {max} + 1)); fi\n\
+             if [ \"$start\" -gt 1 ] && {{ [ \"$off\" -eq 0 ] || [ \"$mode\" = TRUNC ]; }}; then skip=$(tail -c +\"$start\" -- \"$f\" | head -n 1 | wc -c); start=$((start + skip)); fi\n\
              if [ \"$mode\" = SAME ]; then printf 'SIZE %s\\nMODE SAME %s 0\\n' \"$sz\" \"$mt\"\n\
              elif [ \"$mode\" = TRUNC ]; then printf 'SIZE %s\\nMODE TRUNC %s %s\\n' \"$sz\" \"$mt\" \"$start\"; timeout 8 tail -c +\"$start\" -- \"$f\" | head -c {max}\n\
              else printf 'SIZE %s\\nMODE OK %s %s\\n' \"$sz\" \"$mt\" \"$start\"; timeout 8 tail -c +\"$start\" -- \"$f\" | head -c {max}\n\
@@ -897,6 +920,29 @@ fn parse_read_response(raw: &[u8]) -> ParsedRead {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn regular_logs_are_not_treated_as_directories() {
+        let script = read_script("/var/log/mysql/slow.log", 0, false, "", false, 0, false).unwrap();
+        assert!(!script.contains("ls -1t"));
+        assert!(script.contains("cont=1"));
+        assert!(script.contains("Permission denied"));
+    }
+
+    #[test]
+    fn tail_window_aligns_records_and_bounds_reads() {
+        let script = read_script("/var/log/otel/telemetry.json", 0, false, "", true, 0, false).unwrap();
+        assert!(script.contains("sz - 1048576 + 1"));
+        assert!(script.contains("start=$((start + skip))"));
+        assert!(script.contains("head -c 1048576"));
+        assert!(read_script("/tmp/x'bad", 0, false, "", true, 0, false).is_err());
+    }
+
+    #[test]
+    fn permission_protocol_is_an_error_not_an_empty_file() {
+        let parsed = parse_read_response(b"FILE /var/log/otel/telemetry.json\nSIZE ERR Permission denied\nMODE ERR\n");
+        assert!(matches!(parsed.kind, ReadKind::Failed(reason) if reason == "Permission denied"));
+    }
 
     #[test]
     fn parses_size_protocol_and_feeds_otel() {

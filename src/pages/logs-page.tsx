@@ -1,4 +1,5 @@
 import { ScrollText } from "lucide-react";
+import { MonitoringWizard } from "@/components/setup/monitoring-wizard";
 import { LogExplorer } from "@/components/logs/log-explorer";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/status/notice";
@@ -27,6 +28,7 @@ export function LogsPage() {
         title="Logs"
         description={`${server.name}${connected ? "" : " is not connected. Lines appear after you connect."}`}
       />
+      <MonitoringWizard serverId={selectedServerId} />
       <LogExplorer serverId={selectedServerId} title="All application logs" />
     </div>
   );

@@ -1,7 +1,7 @@
 use crate::apps::types::{LogSourceKind, LogSourceRef, TracelynApp};
 use crate::events::SourceStatus;
 use crate::logs::LogRingBuffer;
-use crate::ssh::{start_command_follow, SshSession};
+use crate::ssh::{start_command_follow, start_command_follow_stdin, SshSession};
 use std::collections::HashMap;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::Receiver;
@@ -46,6 +46,7 @@ impl TailHub {
         app_ids: Option<&[String]>,
         source_kinds: Option<&[String]>,
         generation: u64,
+        sudo_password: Option<&str>,
     ) {
         if generation == self.generation && !self.slots.is_empty() {
             return;
@@ -59,8 +60,21 @@ impl TailHub {
             if self.slots.iter().any(|s| s.key == key) {
                 continue;
             }
-            let cmd = follow_command(&source);
-            match start_command_follow(session, &cmd).await {
+            let inner = follow_command(&source);
+            let (cmd, stdin) = if sudo_password.is_some() {
+                (
+                    crate::setup::sudo_stdin_read(&inner),
+                    sudo_password.map(crate::setup::password_bytes),
+                )
+            } else {
+                (crate::setup::privileged_read(&inner), None)
+            };
+            let started = if stdin.is_some() {
+                start_command_follow_stdin(session, &cmd, stdin).await
+            } else {
+                start_command_follow(session, &cmd).await
+            };
+            match started {
                 Ok(rx) => {
                     self.statuses.insert(
                         source.id.clone(),
@@ -216,10 +230,11 @@ fn follow_command(source: &LogSourceRef) -> String {
             if path.is_empty() {
                 "echo 'No such file: log path is empty'".into()
             } else if path.contains('*') || path.contains('?') {
-                let g = shell_quote(&path);
-                format!(
-                    "bash -lc 'shopt -s nullglob; files=({g}); if [ ${{#files[@]}} -eq 0 ]; then echo \"No such file: {g}\"; exit 1; fi; exec tail -n 500 -F -- \"${{files[@]}}\"'"
-                )
+                let pattern = shell_quote(&path);
+                let script = format!(
+                    "mapfile -t files < <(compgen -G {pattern}); if [ ${{#files[@]}} -eq 0 ]; then echo 'No such file: no matching logs'; exit 1; fi; exec tail -n 500 -F -- \"${{files[@]}}\""
+                );
+                format!("bash -c {}", shell_quote(&script))
             } else {
                 let escaped = path.replace('\'', "'\\''");
                 format!("tail -n 500 -F -- '{escaped}' 2>&1")
@@ -239,7 +254,7 @@ pub fn status_from_message(msg: &str) -> SourceStatus {
             ok: false,
             reason: Some("permission denied".into()),
             fix_hint: Some(
-                "Add the SSH user to the adm group (sudo usermod -aG adm USER) and reconnect."
+                "Use Set up monitoring to allow access."
                     .into(),
             ),
         }
@@ -316,6 +331,6 @@ mod tests {
         let st = status_from_message("tail: cannot open '/var/log/x': Permission denied");
         assert!(!st.ok);
         assert_eq!(st.reason.as_deref(), Some("permission denied"));
-        assert!(st.fix_hint.unwrap().contains("adm"));
+        assert!(st.fix_hint.unwrap().contains("Set up monitoring"));
     }
 }

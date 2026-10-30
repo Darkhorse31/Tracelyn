@@ -101,6 +101,18 @@ pub fn apache_log_sources(v: &ApacheVhost, idx: usize) -> Vec<LogSourceRef> {
             fix_hint: None,
         });
     }
+    if let Some(path) = &v.error_log {
+        sources.push(LogSourceRef {
+            id: format!("apache-error-{}", idx),
+            kind: LogSourceKind::Custom,
+            path: Some(path.clone()),
+            container_id: None,
+            vhost: Some(vhost_label),
+            readable: true,
+            issue: None,
+            fix_hint: None,
+        });
+    }
     sources
 }
 

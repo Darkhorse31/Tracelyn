@@ -348,6 +348,7 @@ async fn collector_loop(
             } else {
                 Some(filter.sources.as_slice())
             };
+            let sudo_password = app.state::<AppState>().sudo_password(server_id);
             tails
                 .sync(
                     session,
@@ -355,6 +356,7 @@ async fn collector_loop(
                     app_filter,
                     source_filter,
                     filter.generation,
+                    sudo_password.as_deref(),
                 )
                 .await;
         }
@@ -646,7 +648,8 @@ async fn run_app_discovery(
         let store = state_app.metrics.lock();
         load_manual_apps(store.connection(), server_id).unwrap_or_default()
     };
-    if let Ok(apps) = discover_apps(session, server_id, &manual).await {
+    let sudo_password = state_app.sudo_password(server_id);
+    if let Ok(apps) = discover_apps(session, server_id, &manual, sudo_password.as_deref()).await {
         state_app.set_apps_for_server(server_id, apps.clone());
         event_hub.push_apps(server_id, apps);
         true

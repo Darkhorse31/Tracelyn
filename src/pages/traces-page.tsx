@@ -21,7 +21,7 @@ export function TracesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Traces"
-        description={`${server.name}. Spans come from OTLP JSON files. Nothing is installed on the server.`}
+        description={`${server.name}. Spans come from the collector file on this server.`}
       />
       <TraceBrowser serverId={selectedServerId} />
       <OtelSetup serverId={selectedServerId} appId="" />
