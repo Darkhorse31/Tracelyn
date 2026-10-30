@@ -143,6 +143,17 @@ pub fn build_jobs(channels: &[Channel], title: &str, body: &str, path: &str) -> 
                 },
                 None => errors.push(format!("{}: save a webhook URL first", channel.name)),
             },
+            "ntfy" => {
+                match get_channel_secret(&channel.id).and_then(|value| url::Url::parse(&value).ok()) {
+                    Some(mut url) if url.scheme() == "https" && url.path().trim_matches('/').len() > 0 => {
+                        let topic = url.path().trim_matches('/').to_string();
+                        url.set_path("/");
+                        let payload = json!({"topic":topic,"title":clip_chars(title,200),"message":clip_chars(body,3500)}).to_string();
+                        jobs.push(Job::Https {url:url.to_string(),body:payload});
+                    }
+                    _ => errors.push(format!("{}: save an HTTPS ntfy topic URL first",channel.name)),
+                }
+            }
             "telegram" => {
                 let token = get_channel_secret(&channel.id);
                 let chat = channel.config.chat_id.trim();
@@ -159,16 +170,6 @@ pub fn build_jobs(channels: &[Channel], title: &str, body: &str, path: &str) -> 
                     _ => errors.push(format!("{}: bot token and chat id are required", channel.name)),
                 }
             }
-            "ntfy" => match get_channel_secret(&channel.id) {
-                Some(url) => match validate_https_url(&url) {
-                    Ok(()) => jobs.push(Job::Https {
-                        url,
-                        body: ntfy_body(title, &text),
-                    }),
-                    Err(err) => errors.push(format!("{}: {err}", channel.name)),
-                },
-                None => errors.push(format!("{}: save the ntfy topic URL first", channel.name)),
-            },
             "email" => match email_job(&channel.config, &channel.id, title, body) {
                 Ok(job) => jobs.push(job),
                 Err(err) => errors.push(format!("{}: {err}", channel.name)),

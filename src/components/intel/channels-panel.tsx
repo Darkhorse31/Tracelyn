@@ -197,6 +197,7 @@ function ChannelDialog({
           <DialogDescription>
             Secrets are written to Credential Manager and are not shown again. Leave the secret blank
             when editing to keep the saved value.
+            Installed companions receive channel configuration and credentials over SSH on save.
           </DialogDescription>
         </DialogHeader>
         <form

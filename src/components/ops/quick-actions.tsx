@@ -20,6 +20,11 @@ const LABELS: Record<OpsVerb, string> = {
   stop: "Stop",
   restart: "Restart",
   reload: "Reload",
+  install: "Install",
+  update: "Update",
+  uninstall: "Uninstall",
+  sync: "Sync configuration",
+  configure: "Configure",
 };
 
 function isOpsKind(kind: string): kind is OpsKind {

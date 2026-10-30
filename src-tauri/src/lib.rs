@@ -1,4 +1,5 @@
 mod phase_b2;
+mod companion_history;
 mod license;
 mod alerts;
 mod crash;
@@ -65,6 +66,7 @@ pub fn run() {
             hub.clone().spawn_flusher();
             metrics_ingest::spawn_storage_maintenance(handle.clone());
             phase_b2::spawn(handle.clone());
+            companion_history::spawn(handle.clone());
             infra::setup(handle.clone()).map_err(std::io::Error::other)?;
             intel::spawn_scheduler(handle.clone());
             install_tray(app).map_err(|err| std::io::Error::other(err))?;
@@ -92,6 +94,12 @@ pub fn run() {
             phase_b2::synthetic_results,
             phase_b2::baseline,
             phase_b2::what_changed,
+            commands::companion::companion_status,
+            commands::companion::companion_log_paths,
+            commands::companion::companion_preview,
+            commands::companion::companion_run,
+            commands::companion::companion_query,
+            commands::companion::companion_sync_all,
             license::license_status,
             license::license_activate,
             license::license_deactivate,

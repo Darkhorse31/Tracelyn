@@ -1,3 +1,4 @@
+import { usePrivacy } from "@/contexts/privacy-context";
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export function OpsConfirmDialog({
   choices?: { id: string; label: string; request: ActionRequest }[];
 }) {
   const id = useId();
+  const { mask, enabled: privacy } = usePrivacy();
   const [choiceId, setChoiceId] = useState(choices?.[0]?.id ?? "");
   const selected = choices?.find((choice) => choice.id === choiceId)?.request ?? request;
   const [useSudo, setUseSudo] = useState(false);
@@ -64,6 +66,7 @@ export function OpsConfirmDialog({
     if (!open || !selected) return;
     let cancelled = false;
     setLoading(true);
+    setCommand("");
     setError(null);
     const handle = window.setTimeout(() => {
       void opsPreview({
@@ -142,8 +145,9 @@ export function OpsConfirmDialog({
               : `${verb[0]?.toUpperCase()}${verb.slice(1)} ${selected?.target ?? "target"}?`}
           </DialogTitle>
           <DialogDescription>
-            This is the exact command that will run over SSH. Stop asks you to type the name.
-            Afterwards Tracelyn checks that the service reaches the expected state.
+            {selected?.kind === "companion"
+              ? "Review the commands and SFTP uploads before confirming. Installation and service control require sudo."
+              : "This is the exact command that will run over SSH. Stop asks you to type the name. Afterwards Tracelyn checks that the service reaches the expected state."}
           </DialogDescription>
         </DialogHeader>
         {choices && choices.length > 0 && (
@@ -170,7 +174,7 @@ export function OpsConfirmDialog({
             aria-label="Exact command"
             className="max-h-40 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap"
           >
-            {loading ? "Building command…" : command || "—"}
+            {loading ? "Building command…" : privacy ? "Command preview is hidden in privacy mode" : command || "—"}
           </pre>
         </div>
         {selected?.kind === "pm2" && (
@@ -203,12 +207,13 @@ export function OpsConfirmDialog({
             id={`${id}-sudo`}
             type="checkbox"
             className="size-4 accent-primary"
+            disabled={selected?.kind === "companion"}
             checked={useSudo}
             onChange={(event) => setUseSudo(event.target.checked)}
           />
           Run with sudo
         </label>
-        <div className="grid gap-2">
+        {selected?.kind !== "companion" && <div className="grid gap-2">
           <Label htmlFor={`${id}-wait`}>Wait for health (seconds)</Label>
           <Input
             id={`${id}-wait`}
@@ -219,10 +224,10 @@ export function OpsConfirmDialog({
             value={timeoutSecs}
             onChange={(event) => setTimeoutSecs(Number(event.target.value))}
           />
-        </div>
+        </div>}
         {dangerous && (
           <div className="grid gap-2">
-            <Label htmlFor={`${id}-name`}>Type {confirmName} to confirm stop</Label>
+            <Label htmlFor={`${id}-name`}>Type {confirmName} to confirm</Label>
             <Input
               id={`${id}-name`}
               value={typed}
@@ -235,7 +240,7 @@ export function OpsConfirmDialog({
         )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {mask(error)}
           </p>
         )}
         {outcome && (

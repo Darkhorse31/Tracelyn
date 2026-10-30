@@ -53,6 +53,7 @@ impl AlertEngine {
         let mut transitions = Vec::new();
 
         for rule in rules {
+            if crate::companion_history::owns_basic(&input.server_id,&rule) {continue;}
             if !rule.enabled {
                 continue;
             }

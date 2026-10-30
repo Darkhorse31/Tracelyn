@@ -98,6 +98,18 @@ impl DerefMut for SshChannel {
 }
 
 impl SshSession {
+    /// Upload over the existing authenticated connection, without a shell or TCP listener.
+    pub async fn upload_companion_file(&self, path: &str, bytes: &[u8]) -> Result<(), String> {
+        use tokio::io::AsyncWriteExt;
+        let mut channel = self.channel_open_session().await.map_err(|e| e.to_string())?;
+        channel.request_subsystem(true, "sftp").await.map_err(|e| e.to_string())?;
+        let stream = channel.channel.take().ok_or("SFTP channel unavailable")?.into_stream();
+        let sftp = russh_sftp::client::SftpSession::new(stream).await.map_err(|e| e.to_string())?;
+        let mut file = sftp.create(path).await.map_err(|e| e.to_string())?;
+        file.write_all(bytes).await.map_err(|e| e.to_string())?;
+        file.shutdown().await.map_err(|e| e.to_string())?;
+        sftp.close().await.map_err(|e| e.to_string())
+    }
     pub async fn take_host_key_prompt(&self) -> Option<HostKeyPrompt> {
         self.pending_prompt.lock().await.take()
     }

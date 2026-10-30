@@ -775,8 +775,12 @@ fn validate_rule(rule: &IntelRule) -> Result<(), String> {
         Regex::new(&rule.params.pattern).map_err(|e| format!("pattern: {e}"))?;
     }
     if matches!(rule.kind.as_str(), "ssl_expiry" | "uptime") {
-        notify::validate_host(&rule.params.host)?;
-        if rule.kind == "uptime" && rule.params.port == 0 {
+        let http=rule.kind=="uptime" && (rule.params.host.starts_with("https://")||rule.params.host.starts_with("http://"));
+        if http {
+            let url=url::Url::parse(&rule.params.host).map_err(|_|"Invalid HTTP check URL")?;
+            if url.host_str().is_none()||!url.username().is_empty()||url.password().is_some(){return Err("Use an HTTP URL without embedded credentials".into());}
+        } else {notify::validate_host(&rule.params.host)?;}
+        if rule.kind == "uptime" && !http && rule.params.port == 0 {
             return Err("uptime check needs a port".into());
         }
     }

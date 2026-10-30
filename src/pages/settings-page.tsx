@@ -1,3 +1,4 @@
+import { CompanionCard } from "@/components/companion/companion-card";
 import { PageHeader } from "@/components/layout/page-header";
 import { AccountLicenseCard } from "@/components/account/account-license";
 import { UpdatesCard } from "@/components/account/updates";
@@ -124,6 +125,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
       <OperationsModeCard />
+      <CompanionCard />
       <Card>
         <CardHeader>
           <CardTitle>Diagnostics</CardTitle>

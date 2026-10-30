@@ -1,4 +1,5 @@
 import { WhatChanged } from "@/components/charts/baseline-insights"
+import { CompanionCard } from "@/components/companion/companion-card";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { DiagnosticsPanel } from "@/components/diagnostics/diagnostics-panel";
@@ -181,6 +182,7 @@ export function ServerPage() {
           </>
         }
       />
+      <CompanionCard serverId={selectedServerId} />
 
       {isLive && connected && (
         <div className="flex flex-wrap items-center gap-4">
